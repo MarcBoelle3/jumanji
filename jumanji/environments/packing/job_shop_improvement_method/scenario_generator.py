@@ -74,10 +74,6 @@ class RandomScenarioGenerator(ScenarioGenerator):
         super().__init__(max_num_jobs, max_num_ops, max_op_duration)
 
     def __call__(self, key: chex.PRNGKey, num_jobs: int, num_machines: int) -> Scenario:
-        assert (
-            num_jobs <= self.max_num_jobs
-        ), f"The number of jobs must be less than or equal to {self.max_num_jobs}"
-
         key, machine_key, duration_key, ops_key = jax.random.split(key, num=4)
 
         # Randomly sample machine IDs and durations
@@ -123,6 +119,8 @@ class RandomScenarioGenerator(ScenarioGenerator):
         scenario = Scenario(
             num_jobs=num_jobs,
             num_machines=num_machines,
+            max_num_jobs=self.max_num_jobs,
+            max_num_ops=self.max_num_ops,
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             num_ops_per_job=num_ops_per_job,
