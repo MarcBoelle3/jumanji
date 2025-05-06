@@ -40,16 +40,35 @@ class Observation(NamedTuple):
     )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
     makespan: chex.Numeric  # ()
 
-
 @dataclass
-class State:
-    """The environment state containing a complete description of the job shop scheduling problem.
-    A state contains a valid instance of the job shop scheduling problem.
+class Scenario:
+    """A scenario containing the description of the job shop scheduling problem.
 
+    num_jobs: number of jobs in the problem.
+    num_machines: number of machines in the problem.
+    max_num_jobs: maximum number of jobs in the problem.
+    max_num_ops: maximum number of operations in the problem.
     ops_machine_ids: for each job, it specifies the machine each op must be processed on.
         Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
     ops_durations: for each job, it specifies the processing time of each operation.
         Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
+    num_ops_per_job: for each job, it specifies the number of operations.
+        Note that a 0 corresponds to a non-existing job.
+    """
+
+    num_jobs: int
+    num_machines: int
+    max_num_jobs: int
+    max_num_ops: int
+    ops_machine_ids: chex.Array  # (max_num_jobs, max_num_ops)
+    ops_durations: chex.Array  # (max_num_jobs, max_num_ops)
+    num_ops_per_job: chex.Array  # (max_num_jobs,)
+    
+@dataclass
+class State:
+    """The environment state containing a valid schedule for a given scenario.
+
+    scenario: Scenario, description of the job shop scheduling problem.
     step_count: used to track time, which is necessary to check termination condition.
     scheduled_times: for each job, it specifies the time at which each operation was scheduled.
     adj_mat_pc: adjacency matrix of the precedence constraints graph.
@@ -58,9 +77,7 @@ class State:
     key: random key used for auto-reset.
     """
 
-    ops_machine_ids: chex.Array  # (max_num_jobs, max_num_ops)
-    ops_durations: chex.Array  # (max_num_jobs, max_num_ops)
-    num_ops_per_job: chex.Array  # (max_num_jobs,)
+    scenario: Scenario
     step_count: chex.Numeric  # ()
     scheduled_times: chex.Array  # (max_num_jobs, max_num_ops)
     adj_mat_pc: (
@@ -73,22 +90,3 @@ class State:
     key: chex.PRNGKey  # (2,)
 
 
-@dataclass
-class Scenario:
-    """A scenario containing the description of the job shop scheduling problem.
-
-    num_jobs: number of jobs in the problem.
-    num_machines: number of machines in the problem.
-    ops_machine_ids: for each job, it specifies the machine each op must be processed on.
-        Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
-    ops_durations: for each job, it specifies the processing time of each operation.
-        Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
-    num_ops_per_job: for each job, it specifies the number of operations.
-        Note that a 0 corresponds to a non-existing job.
-    """
-
-    num_jobs: int
-    num_machines: int
-    ops_machine_ids: chex.Array  # (max_num_jobs, max_num_ops)
-    ops_durations: chex.Array  # (max_num_jobs, max_num_ops)
-    num_ops_per_job: chex.Array  # (max_num_jobs,)
