@@ -12,5 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from jumanji.environments.packing.job_shop.env import JobShop
-from jumanji.environments.packing.job_shop.types import Observation, State
+from jumanji.environments.packing.job_shop.constructive.env import JobShop
+from jumanji.environments.packing.job_shop.constructive.types import Observation, State

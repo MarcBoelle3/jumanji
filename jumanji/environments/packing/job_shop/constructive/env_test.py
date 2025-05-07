@@ -16,9 +16,9 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from jumanji.environments.packing.job_shop.env import JobShop
-from jumanji.environments.packing.job_shop.generator import ToyGenerator
-from jumanji.environments.packing.job_shop.types import State
+from jumanji.environments.packing.job_shop.constructive.env import JobShop
+from jumanji.environments.packing.job_shop.constructive.generator import ToyGenerator
+from jumanji.environments.packing.job_shop.constructive.types import State
 from jumanji.testing.env_not_smoke import (
     check_env_does_not_smoke,
     check_env_specs_does_not_smoke,

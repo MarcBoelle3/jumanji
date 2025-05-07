@@ -16,12 +16,12 @@ import chex
 import jax
 import pytest
 
-from jumanji.environments.packing.job_shop.conftest import DummyGenerator
-from jumanji.environments.packing.job_shop.generator import (
+from jumanji.environments.packing.job_shop.constructive.conftest import DummyGenerator
+from jumanji.environments.packing.job_shop.constructive.generator import (
     RandomGenerator,
     ToyGenerator,
 )
-from jumanji.environments.packing.job_shop.types import State
+from jumanji.environments.packing.job_shop.constructive.types import State
 from jumanji.testing.pytrees import assert_trees_are_different, assert_trees_are_equal
 
 

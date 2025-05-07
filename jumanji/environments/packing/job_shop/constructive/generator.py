@@ -18,7 +18,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from jumanji.environments.packing.job_shop.types import State
+from jumanji.environments.packing.job_shop.constructive.types import State
 
 
 class Generator(abc.ABC):

@@ -17,9 +17,9 @@ import jax.random
 import pytest
 from chex import PRNGKey
 
-from jumanji.environments.packing.job_shop.env import JobShop
-from jumanji.environments.packing.job_shop.generator import Generator
-from jumanji.environments.packing.job_shop.types import State
+from jumanji.environments.packing.job_shop.constructive.env import JobShop
+from jumanji.environments.packing.job_shop.constructive.generator import Generator
+from jumanji.environments.packing.job_shop.constructive.types import State
 
 
 class DummyGenerator(Generator):
