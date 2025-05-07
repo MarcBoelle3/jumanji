@@ -19,6 +19,7 @@ import jax.numpy as jnp
 from jumanji.environments.packing.job_shop.constructive.env import JobShop
 from jumanji.environments.packing.job_shop.constructive.generator import ToyGenerator
 from jumanji.environments.packing.job_shop.constructive.types import State
+from jumanji.environments.packing.job_shop.scenario_generator import ToyScenarioGenerator
 from jumanji.testing.env_not_smoke import (
     check_env_does_not_smoke,
     check_env_specs_does_not_smoke,
@@ -741,8 +742,11 @@ class TestJobShop:
         for the `ToyGenerator` and thus a reward of -8.
         """
         key = jax.random.PRNGKey(0)
-        toy_generator = ToyGenerator()
-        env = JobShop(toy_generator)
+        toy_schedule_generator = ToyGenerator()
+        toy_scenario_generator = ToyScenarioGenerator()
+        env = JobShop(
+            scenario_generator=toy_scenario_generator, schedule_generator=toy_schedule_generator
+        )
         state, timestep = env.reset(key)
         no_op_idx = env.num_jobs
 

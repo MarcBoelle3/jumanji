@@ -23,8 +23,12 @@ from numpy.typing import NDArray
 
 from jumanji import specs
 from jumanji.env import Environment
-from jumanji.environments.packing.job_shop.constructive.generator import Generator, RandomGenerator
+from jumanji.environments.packing.job_shop.constructive.generator import (
+    Generator,
+    StandardGenerator,
+)
 from jumanji.environments.packing.job_shop.constructive.types import Observation, State
+from jumanji.environments.packing.job_shop.scenario_generator import RandomScenarioGenerator
 from jumanji.environments.packing.job_shop.viewer import JobShopViewer
 from jumanji.types import TimeStep, restart, termination, transition
 from jumanji.viewer import Viewer
@@ -92,7 +96,8 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
 
     def __init__(
         self,
-        generator: Optional[Generator] = None,
+        scenario_generator: Optional[RandomScenarioGenerator] = None,
+        schedule_generator: Optional[Generator] = None,
         viewer: Optional[Viewer[State]] = None,
     ):
         """Instantiate a `JobShop` environment.
@@ -104,16 +109,20 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
                 for any given job, and a max operation duration of 6.
             viewer: `Viewer` used for rendering. Defaults to `JobShopViewer`.
         """
-        self.generator = generator or RandomGenerator(
-            num_jobs=20,
-            num_machines=10,
+        self.scenario_generator = scenario_generator or RandomScenarioGenerator(
+            max_num_jobs=20,
             max_num_ops=8,
             max_op_duration=6,
         )
-        self.num_jobs = self.generator.num_jobs
-        self.num_machines = self.generator.num_machines
-        self.max_num_ops = self.generator.max_num_ops
-        self.max_op_duration = self.generator.max_op_duration
+        self.schedule_generator = schedule_generator or StandardGenerator(
+            num_jobs=20,
+            num_machines=10,
+            max_num_ops=8,
+        )
+        self.num_jobs = self.schedule_generator.num_jobs
+        self.num_machines = self.schedule_generator.num_machines
+        self.max_num_ops = self.schedule_generator.max_num_ops
+        self.max_op_duration = self.scenario_generator.max_op_duration
         super().__init__()
 
         # Define the "job id" of a no-op action as the number of jobs
@@ -132,7 +141,8 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
         return "\n".join(
             [
                 "JobShop environment:",
-                f" - generator: {self.generator}",
+                f" - scenario_generator: {self.scenario_generator}",
+                f" - schedule_generator: {self.schedule_generator}",
                 f" - num_jobs: {self.num_jobs}",
                 f" - num_machines: {self.num_machines}",
                 f" - max_num_ops: {self.max_num_ops}",
@@ -152,7 +162,8 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
             timestep: the first timestep returned by the environment after the reset.
         """
         # Generate a new problem instance
-        state = self.generator(key)
+        scenario = self.scenario_generator(key, self.num_jobs, self.num_machines)
+        state = self.schedule_generator(key, scenario)
 
         # Create the action mask and update the state
         state.action_mask = self._create_action_mask(
