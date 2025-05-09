@@ -17,57 +17,11 @@ import jax.random
 import pytest
 from chex import PRNGKey
 
+from jumanji.environments.packing.job_shop.conftest import DummyScenarioGenerator
 from jumanji.environments.packing.job_shop.constructive.env import JobShop
 from jumanji.environments.packing.job_shop.constructive.generator import Generator
 from jumanji.environments.packing.job_shop.constructive.types import State
-from jumanji.environments.packing.job_shop.scenario_generator import ScenarioGenerator
 from jumanji.environments.packing.job_shop.types import Scenario
-
-
-class DummyScenarioGenerator(ScenarioGenerator):
-    """Hardcoded `ScenarioGenerator` mainly used for testing and debugging. It deterministically
-    outputs a hardcoded instance with 3 jobs, 3 machines, a max of 3 ops for any job, and a max
-    duration of 4 time steps for any operation.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(max_num_jobs=3, max_num_ops=3, max_op_duration=4)
-
-    def __call__(self, key: PRNGKey, num_jobs: int, num_machines: int) -> Scenario:
-        """Call method responsible for generating a new scenario. It returns a hardcoded instance
-        with 3 jobs, 3 machines, a max of 3 ops for any job, and a max duration of 4 time steps
-        for any operation.
-        """
-        del key
-        del num_jobs
-        del num_machines
-
-        ops_machine_ids = jnp.array(
-            [
-                [0, 1, 2],
-                [0, 2, 1],
-                [1, 2, -1],
-            ],
-            jnp.int32,
-        )
-        ops_durations = jnp.array(
-            [
-                [3, 2, 2],
-                [2, 1, 4],
-                [4, 3, -1],
-            ],
-            jnp.int32,
-        )
-
-        return Scenario(
-            num_jobs=3,
-            num_machines=3,
-            max_num_jobs=3,
-            max_num_ops=3,
-            ops_machine_ids=ops_machine_ids,
-            ops_durations=ops_durations,
-            num_ops_per_job=jnp.array([3, 3, 2], jnp.int32),
-        )
 
 
 class DummyGenerator(Generator):
@@ -152,6 +106,11 @@ class DummyGenerator(Generator):
         )
 
         return state
+
+
+@pytest.fixture
+def dummy_generator() -> DummyGenerator:
+    return DummyGenerator()
 
 
 @pytest.fixture
