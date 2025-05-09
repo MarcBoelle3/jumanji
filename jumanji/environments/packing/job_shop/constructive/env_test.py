@@ -16,9 +16,10 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from jumanji.environments.packing.job_shop.env import JobShop
-from jumanji.environments.packing.job_shop.generator import ToyGenerator
-from jumanji.environments.packing.job_shop.types import State
+from jumanji.environments.packing.job_shop.constructive.env import JobShop
+from jumanji.environments.packing.job_shop.constructive.generator import ToyScheduleGenerator
+from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState
+from jumanji.environments.packing.job_shop.scenario_generator import ToyScenarioGenerator
 from jumanji.testing.env_not_smoke import (
     check_env_does_not_smoke,
     check_env_specs_does_not_smoke,
@@ -90,7 +91,7 @@ class TestJobShop:
         # Call again to check it does not compile twice
         state, timestep = reset_fn(key)
         assert isinstance(timestep, TimeStep)
-        assert isinstance(state, State)
+        assert isinstance(state, ConstructiveState)
 
     def test_job_shop__step(self, job_shop_env: JobShop) -> None:
         """Test the 12 steps of the dummy instance."""
@@ -734,15 +735,18 @@ class TestJobShop:
         # Call again to check it does not compile twice
         next_state, next_timestep = step_fn(state, action)
         assert isinstance(next_timestep, TimeStep)
-        assert isinstance(next_state, State)
+        assert isinstance(next_state, ConstructiveState)
 
     def test_job_shop__toy_generator_reward(self) -> None:
         """Verify that the specified actions lead to the optimal makespan
-        for the `ToyGenerator` and thus a reward of -8.
+        for the `ToyScheduleGenerator` and thus a reward of -8.
         """
         key = jax.random.PRNGKey(0)
-        toy_generator = ToyGenerator()
-        env = JobShop(toy_generator)
+        toy_schedule_generator = ToyScheduleGenerator()
+        toy_scenario_generator = ToyScenarioGenerator()
+        env = JobShop(
+            scenario_generator=toy_scenario_generator, schedule_generator=toy_schedule_generator
+        )
         state, timestep = env.reset(key)
         no_op_idx = env.num_jobs
 

@@ -21,6 +21,8 @@ if TYPE_CHECKING:  # https://github.com/python/mypy/issues/6239
 else:
     from chex import dataclass
 
+from jumanji.environments.packing.job_shop.types import JobShopState
+
 
 class Observation(NamedTuple):
     """
@@ -28,10 +30,13 @@ class Observation(NamedTuple):
         Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
     ops_durations: for each job, it specifies the processing time of each operation.
         Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
+    adj_mat_pc: adjacency matrix of the precedence constraints graph.
+    adj_mat_mc: adjacency matrix of the machine constraints graph.
+    makespan: the current makespan of the state.
     """
 
-    ops_machine_ids: chex.Array  # (max_num_jobs, max_num_ops)
-    ops_durations: chex.Array  # (max_num_jobs, max_num_ops)
+    ops_machine_ids: chex.Array  # (num_jobs, max_num_ops)
+    ops_durations: chex.Array  # (num_jobs, max_num_ops)
     adj_mat_pc: (
         chex.Array
     )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
@@ -42,27 +47,17 @@ class Observation(NamedTuple):
 
 
 @dataclass
-class State:
-    """The environment state containing a complete description of the job shop scheduling problem.
-    A state contains a valid instance of the job shop scheduling problem.
+class ImprovementState(JobShopState):
+    """The environment state containing a valid schedule for a given scenario.
 
-    ops_machine_ids: for each job, it specifies the machine each op must be processed on.
-        Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
-    ops_durations: for each job, it specifies the processing time of each operation.
-        Note that a -1 corresponds to padded ops since not all jobs have the same number of ops.
-    step_count: used to track time, which is necessary to check termination condition.
-    scheduled_times: for each job, it specifies the time at which each operation was scheduled.
+    num_ops_per_job: for each job, it specifies the number of operations.
+        Note that a 0 corresponds to a non-existing job.
     adj_mat_pc: adjacency matrix of the precedence constraints graph.
     adj_mat_mc: adjacency matrix of the machine constraints graph. Updated at each step.
     makespan: the current makespan of the state.
-    key: random key used for auto-reset.
     """
 
-    ops_machine_ids: chex.Array  # (max_num_jobs, max_num_ops)
-    ops_durations: chex.Array  # (max_num_jobs, max_num_ops)
     num_ops_per_job: chex.Array  # (max_num_jobs,)
-    step_count: chex.Numeric  # ()
-    scheduled_times: chex.Array  # (max_num_jobs, max_num_ops)
     adj_mat_pc: (
         chex.Array
     )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
@@ -70,4 +65,3 @@ class State:
         chex.Array
     )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
     makespan: chex.Numeric  # ()
-    key: chex.PRNGKey  # (2,)

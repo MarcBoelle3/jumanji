@@ -21,11 +21,11 @@ import numpy as np
 from matplotlib.artist import Artist
 from numpy.typing import NDArray
 
-from jumanji.environments.packing.job_shop.types import State
+from jumanji.environments.packing.job_shop.types import JobShopState
 from jumanji.viewer import MatplotlibViewer
 
 
-class JobShopViewer(MatplotlibViewer[State]):
+class JobShopViewer(MatplotlibViewer[JobShopState]):
     COLORMAP_NAME = "hsv"
 
     def __init__(
@@ -59,7 +59,7 @@ class JobShopViewer(MatplotlibViewer[State]):
 
         super().__init__(name, render_mode)
 
-    def render(self, state: State, save_path: Optional[str] = None) -> Optional[NDArray]:
+    def render(self, state: JobShopState, save_path: Optional[str] = None) -> Optional[NDArray]:
         """Render the given state of the `JobShop` environment.
 
         Args:
@@ -84,7 +84,7 @@ class JobShopViewer(MatplotlibViewer[State]):
 
     def animate(
         self,
-        states: Sequence[State],
+        states: Sequence[JobShopState],
         interval: int = 200,
         save_path: Optional[str] = None,
     ) -> matplotlib.animation.FuncAnimation:
@@ -103,7 +103,7 @@ class JobShopViewer(MatplotlibViewer[State]):
         plt.close(fig=fig)
         self._prepare_figure(ax)
 
-        def make_frame(state: State) -> Tuple[Artist]:
+        def make_frame(state: JobShopState) -> Tuple[Artist]:
             ax.clear()
             self._prepare_figure(ax)
             ax.set_title(rf"Scheduled Jobs at Time={state.step_count}")
@@ -139,7 +139,7 @@ class JobShopViewer(MatplotlibViewer[State]):
         ax.grid(axis="x", linewidth=0.25)
         ax.set_axisbelow(True)
 
-    def _add_scheduled_ops(self, ax: plt.Axes, state: State) -> None:
+    def _add_scheduled_ops(self, ax: plt.Axes, state: JobShopState) -> None:
         """Add the scheduled operations to the plot."""
         for job_id in range(self._num_jobs):
             for op_id in range(self._max_num_ops):
