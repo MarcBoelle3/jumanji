@@ -126,3 +126,21 @@ class TestEmptyScheduleGenerator:
 
         state2 = call_fn(key=jax.random.PRNGKey(2), scenario=scenario)
         assert_trees_are_different(state1, state2)
+
+    def test_empty_schedule_generator__call_same_key(
+        self,
+        empty_schedule_generator: EmptyScheduleGenerator,
+        random_scenario_generator: RandomScenarioGenerator,
+    ) -> None:
+        """Validate that the random schedule generator's call function is jit-able and compiles
+        only once. Also check that giving the same key results in the same instance.
+        """
+        scenario = random_scenario_generator(
+            key=jax.random.PRNGKey(1), num_jobs=20, num_machines=10
+        )
+
+        chex.clear_trace_counter()
+        call_fn = jax.jit(chex.assert_max_traces(empty_schedule_generator.__call__, n=1))
+        state1 = call_fn(key=jax.random.PRNGKey(1), scenario=scenario)
+        state2 = call_fn(key=jax.random.PRNGKey(1), scenario=scenario)
+        assert_trees_are_equal(state1, state2)
