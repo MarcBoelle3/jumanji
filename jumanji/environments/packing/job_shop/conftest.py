@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import chex
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -66,6 +67,7 @@ class DummyScenarioGenerator(ScenarioGenerator):
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             num_ops_per_job=jnp.array([3, 3, 2], jnp.int32),
+            key=jax.random.PRNGKey(0),
         )
 
 
