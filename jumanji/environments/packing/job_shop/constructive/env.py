@@ -28,7 +28,10 @@ from jumanji.environments.packing.job_shop.constructive.generator import (
     StandardGenerator,
 )
 from jumanji.environments.packing.job_shop.constructive.types import Observation, State
-from jumanji.environments.packing.job_shop.scenario_generator import RandomScenarioGenerator
+from jumanji.environments.packing.job_shop.scenario_generator import (
+    RandomScenarioGenerator,
+    ScenarioGenerator,
+)
 from jumanji.environments.packing.job_shop.viewer import JobShopViewer
 from jumanji.types import TimeStep, restart, termination, transition
 from jumanji.viewer import Viewer
@@ -96,7 +99,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
 
     def __init__(
         self,
-        scenario_generator: Optional[RandomScenarioGenerator] = None,
+        scenario_generator: Optional[ScenarioGenerator] = None,
         schedule_generator: Optional[Generator] = None,
         viewer: Optional[Viewer[State]] = None,
     ):
