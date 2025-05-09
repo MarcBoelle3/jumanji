@@ -1,4 +1,4 @@
-::: jumanji.environments.packing.job_shop.env.JobShop
+::: jumanji.environments.packing.job_shop.constructive.env.JobShop
     selection:
       members:
         - __init__
