@@ -18,7 +18,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from jumanji.environments.packing.job_shop.constructive.types import State
+from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState
 from jumanji.environments.packing.job_shop.types import Scenario
 
 
@@ -45,7 +45,7 @@ class ScheduleGenerator(abc.ABC):
         self.max_num_ops = max_num_ops
 
     @abc.abstractmethod
-    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> State:
+    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> ConstructiveState:
         """Call method responsible for generating a new state based on a given scenario.
 
         Args:
@@ -66,7 +66,7 @@ class ToyScheduleGenerator(ScheduleGenerator):
     def __init__(self) -> None:
         super().__init__(num_jobs=5, num_machines=4, max_num_ops=4)
 
-    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> State:
+    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> ConstructiveState:
         del scenario
         del key
 
@@ -98,7 +98,7 @@ class ToyScheduleGenerator(ScheduleGenerator):
         ops_mask = ops_machine_ids != -1
         step_count = jnp.array(0, jnp.int32)
 
-        state = State(
+        state = ConstructiveState(
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             ops_mask=ops_mask,
@@ -122,7 +122,7 @@ class EmptyScheduleGenerator(ScheduleGenerator):
     def __init__(self, num_jobs: int, num_machines: int, max_num_ops: int):
         super().__init__(num_jobs, num_machines, max_num_ops)
 
-    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> State:
+    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> ConstructiveState:
         # Generate a random scenario
         ops_machine_ids = scenario.ops_machine_ids
         ops_durations = scenario.ops_durations
@@ -138,7 +138,7 @@ class EmptyScheduleGenerator(ScheduleGenerator):
         # Time starts at 0
         step_count = jnp.array(0, jnp.int32)
 
-        state = State(
+        state = ConstructiveState(
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             ops_mask=ops_mask,

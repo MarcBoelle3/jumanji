@@ -27,7 +27,7 @@ from jumanji.environments.packing.job_shop.constructive.generator import (
     EmptyScheduleGenerator,
     ScheduleGenerator,
 )
-from jumanji.environments.packing.job_shop.constructive.types import Observation, State
+from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState, Observation
 from jumanji.environments.packing.job_shop.scenario_generator import (
     RandomScenarioGenerator,
     ScenarioGenerator,
@@ -37,7 +37,7 @@ from jumanji.types import TimeStep, restart, termination, transition
 from jumanji.viewer import Viewer
 
 
-class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
+class JobShop(Environment[ConstructiveState, specs.MultiDiscreteArray, Observation]):
     """The Job Shop Scheduling Problem, as described in [1], is one of the best known
     combinatorial optimization problems. We are given `num_jobs` jobs, each consisting
     of at most `max_num_ops` ops, which need to be processed on `num_machines` machines.
@@ -101,7 +101,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
         self,
         scenario_generator: Optional[ScenarioGenerator] = None,
         schedule_generator: Optional[ScheduleGenerator] = None,
-        viewer: Optional[Viewer[State]] = None,
+        viewer: Optional[Viewer[ConstructiveState]] = None,
     ):
         """Instantiate a `JobShop` environment.
 
@@ -153,7 +153,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
             ]
         )
 
-    def reset(self, key: chex.PRNGKey) -> Tuple[State, TimeStep[Observation]]:
+    def reset(self, key: chex.PRNGKey) -> Tuple[ConstructiveState, TimeStep[Observation]]:
         """Resets the environment by creating a new problem instance and initialising the state
         and timestep.
 
@@ -182,7 +182,9 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
 
         return state, timestep
 
-    def step(self, state: State, action: chex.Array) -> Tuple[State, TimeStep[Observation]]:
+    def step(
+        self, state: ConstructiveState, action: chex.Array
+    ) -> Tuple[ConstructiveState, TimeStep[Observation]]:
         """Updates the status of all machines, the status of the operations, and increments the
         time step. It updates the environment state and the timestep (which contains the new
         observation). It calculates the reward based on the three terminal conditions:
@@ -248,7 +250,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
         )
 
         # Update the state and extract the next observation
-        next_state = State(
+        next_state = ConstructiveState(
             ops_machine_ids=state.ops_machine_ids,
             ops_durations=state.ops_durations,
             ops_mask=updated_ops_mask,
@@ -445,7 +447,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
             name="action",
         )
 
-    def render(self, state: State) -> Optional[NDArray]:
+    def render(self, state: ConstructiveState) -> Optional[NDArray]:
         """Render the given state of the environment. This rendering shows which job (or no-op)
         is running on each machine for the current time step and previous time steps.
 
@@ -464,7 +466,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
 
     def animate(
         self,
-        states: Sequence[State],
+        states: Sequence[ConstructiveState],
         interval: int = 200,
         save_path: Optional[str] = None,
     ) -> matplotlib.animation.FuncAnimation:
@@ -481,7 +483,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
         """
         return self._viewer.animate(states, interval, save_path)
 
-    def _observation_from_state(self, state: State) -> Observation:
+    def _observation_from_state(self, state: ConstructiveState) -> Observation:
         """Converts a job shop environment state to an observation.
 
         Args:

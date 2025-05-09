@@ -21,7 +21,7 @@ if TYPE_CHECKING:  # https://github.com/python/mypy/issues/6239
 else:
     from chex import dataclass
 
-from jumanji.environments.packing.job_shop.types import CommonState
+from jumanji.environments.packing.job_shop.types import JobShopState
 
 
 class Observation(NamedTuple):
@@ -49,7 +49,7 @@ class Observation(NamedTuple):
 
 
 @dataclass
-class State(CommonState):
+class ConstructiveState(JobShopState):
     """The environment state containing a complete description of the job shop scheduling problem.
 
     ops_mask: for each job, indicates which operations remain to be scheduled. False if the

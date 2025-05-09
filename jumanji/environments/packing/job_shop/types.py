@@ -50,7 +50,7 @@ class Scenario:
 
 
 @dataclass
-class CommonState:
+class JobShopState:
     """The environment state containing a complete description of the job shop scheduling problem.
     It is common to the constructive and improvement methods.
     States of each method are derived from this class.

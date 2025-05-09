@@ -20,7 +20,7 @@ from chex import PRNGKey
 from jumanji.environments.packing.job_shop.conftest import DummyScenarioGenerator
 from jumanji.environments.packing.job_shop.constructive.env import JobShop
 from jumanji.environments.packing.job_shop.constructive.generator import ScheduleGenerator
-from jumanji.environments.packing.job_shop.constructive.types import State
+from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState
 from jumanji.environments.packing.job_shop.types import Scenario
 
 
@@ -33,7 +33,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
     def __init__(self) -> None:
         super().__init__(num_jobs=3, num_machines=3, max_num_ops=3)
 
-    def __call__(self, key: PRNGKey, scenario: Scenario) -> State:
+    def __call__(self, key: PRNGKey, scenario: Scenario) -> ConstructiveState:
         """Call method responsible for generating a new state. It returns a job shop scheduling
         instance without any scheduled jobs.
 
@@ -93,7 +93,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
 
         step_count = jnp.array(0, jnp.int32)
 
-        state = State(
+        state = ConstructiveState(
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             ops_mask=ops_mask,

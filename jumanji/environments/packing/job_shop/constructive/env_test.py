@@ -18,7 +18,7 @@ import jax.numpy as jnp
 
 from jumanji.environments.packing.job_shop.constructive.env import JobShop
 from jumanji.environments.packing.job_shop.constructive.generator import ToyScheduleGenerator
-from jumanji.environments.packing.job_shop.constructive.types import State
+from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState
 from jumanji.environments.packing.job_shop.scenario_generator import ToyScenarioGenerator
 from jumanji.testing.env_not_smoke import (
     check_env_does_not_smoke,
@@ -91,7 +91,7 @@ class TestJobShop:
         # Call again to check it does not compile twice
         state, timestep = reset_fn(key)
         assert isinstance(timestep, TimeStep)
-        assert isinstance(state, State)
+        assert isinstance(state, ConstructiveState)
 
     def test_job_shop__step(self, job_shop_env: JobShop) -> None:
         """Test the 12 steps of the dummy instance."""
@@ -735,7 +735,7 @@ class TestJobShop:
         # Call again to check it does not compile twice
         next_state, next_timestep = step_fn(state, action)
         assert isinstance(next_timestep, TimeStep)
-        assert isinstance(next_state, State)
+        assert isinstance(next_state, ConstructiveState)
 
     def test_job_shop__toy_generator_reward(self) -> None:
         """Verify that the specified actions lead to the optimal makespan

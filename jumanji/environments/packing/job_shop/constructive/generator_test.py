@@ -22,7 +22,7 @@ from jumanji.environments.packing.job_shop.constructive.generator import (
     EmptyScheduleGenerator,
     ToyScheduleGenerator,
 )
-from jumanji.environments.packing.job_shop.constructive.types import State
+from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState
 from jumanji.environments.packing.job_shop.scenario_generator import (
     RandomScenarioGenerator,
     ToyScenarioGenerator,
@@ -122,7 +122,7 @@ class TestEmptyScheduleGenerator:
         chex.clear_trace_counter()
         call_fn = jax.jit(chex.assert_max_traces(empty_schedule_generator.__call__, n=1))
         state1 = call_fn(key=jax.random.PRNGKey(1), scenario=scenario)
-        assert isinstance(state1, State)
+        assert isinstance(state1, ConstructiveState)
 
         state2 = call_fn(key=jax.random.PRNGKey(2), scenario=scenario)
         assert_trees_are_different(state1, state2)
