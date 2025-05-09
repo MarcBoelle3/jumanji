@@ -19,13 +19,13 @@ from chex import PRNGKey
 
 from jumanji.environments.packing.job_shop.conftest import DummyScenarioGenerator
 from jumanji.environments.packing.job_shop.constructive.env import JobShop
-from jumanji.environments.packing.job_shop.constructive.generator import Generator
+from jumanji.environments.packing.job_shop.constructive.generator import ScheduleGenerator
 from jumanji.environments.packing.job_shop.constructive.types import State
 from jumanji.environments.packing.job_shop.types import Scenario
 
 
-class DummyGenerator(Generator):
-    """Hardcoded `Generator` mainly used for testing and debugging. It deterministically
+class DummyScheduleGenerator(ScheduleGenerator):
+    """Hardcoded `ScheduleGenerator` mainly used for testing and debugging. It deterministically
     outputs a hardcoded instance with 3 jobs, 3 machines, a max of 3 ops for any job, and a max
     duration of 4 time steps for any operation.
     """
@@ -109,12 +109,12 @@ class DummyGenerator(Generator):
 
 
 @pytest.fixture
-def dummy_generator() -> DummyGenerator:
-    return DummyGenerator()
+def dummy_schedule_generator() -> DummyScheduleGenerator:
+    return DummyScheduleGenerator()
 
 
 @pytest.fixture
 def job_shop_env() -> JobShop:
     scenario_generator = DummyScenarioGenerator()
-    schedule_generator = DummyGenerator()
+    schedule_generator = DummyScheduleGenerator()
     return JobShop(scenario_generator=scenario_generator, schedule_generator=schedule_generator)

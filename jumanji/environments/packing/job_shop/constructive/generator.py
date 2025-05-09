@@ -22,8 +22,8 @@ from jumanji.environments.packing.job_shop.constructive.types import State
 from jumanji.environments.packing.job_shop.types import Scenario
 
 
-class Generator(abc.ABC):
-    """Defines the abstract `Generator` base class. A `Generator` is responsible
+class ScheduleGenerator(abc.ABC):
+    """Defines the abstract `ScheduleGenerator` base class. A `ScheduleGenerator` is responsible
     for generating a problem instance when the environment is reset.
     """
 
@@ -56,8 +56,8 @@ class Generator(abc.ABC):
         """
 
 
-class ToyGenerator(Generator):
-    """`Generator` that can be used as an example. It deterministically outputs a hardcoded
+class ToyScheduleGenerator(ScheduleGenerator):
+    """`ScheduleGenerator` that can be used as an example. It deterministically outputs a hardcoded
     instance with 5 jobs, 4 machines, a max of 4 ops for any job, and max duration of 4 time
     steps for any operation. By construction, this generator has a known, optimal makespan
     of 8 time steps.
@@ -113,7 +113,7 @@ class ToyGenerator(Generator):
         return state
 
 
-class EmptyScheduleGenerator(Generator):
+class EmptyScheduleGenerator(ScheduleGenerator):
     """Instance generator that initializes the state based on a given scenario.
     All machines are available at the beginning of the episode, and the scheduled times are
     initialized to -1 (no operation scheduled yet).

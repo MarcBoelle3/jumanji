@@ -25,7 +25,7 @@ from jumanji import specs
 from jumanji.env import Environment
 from jumanji.environments.packing.job_shop.constructive.generator import (
     EmptyScheduleGenerator,
-    Generator,
+    ScheduleGenerator,
 )
 from jumanji.environments.packing.job_shop.constructive.types import Observation, State
 from jumanji.environments.packing.job_shop.scenario_generator import (
@@ -100,7 +100,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
     def __init__(
         self,
         scenario_generator: Optional[ScenarioGenerator] = None,
-        schedule_generator: Optional[Generator] = None,
+        schedule_generator: Optional[ScheduleGenerator] = None,
         viewer: Optional[Viewer[State]] = None,
     ):
         """Instantiate a `JobShop` environment.

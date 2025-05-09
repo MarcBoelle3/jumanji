@@ -17,7 +17,7 @@ import jax
 import jax.numpy as jnp
 
 from jumanji.environments.packing.job_shop.constructive.env import JobShop
-from jumanji.environments.packing.job_shop.constructive.generator import ToyGenerator
+from jumanji.environments.packing.job_shop.constructive.generator import ToyScheduleGenerator
 from jumanji.environments.packing.job_shop.constructive.types import State
 from jumanji.environments.packing.job_shop.scenario_generator import ToyScenarioGenerator
 from jumanji.testing.env_not_smoke import (
@@ -739,10 +739,10 @@ class TestJobShop:
 
     def test_job_shop__toy_generator_reward(self) -> None:
         """Verify that the specified actions lead to the optimal makespan
-        for the `ToyGenerator` and thus a reward of -8.
+        for the `ToyScheduleGenerator` and thus a reward of -8.
         """
         key = jax.random.PRNGKey(0)
-        toy_schedule_generator = ToyGenerator()
+        toy_schedule_generator = ToyScheduleGenerator()
         toy_scenario_generator = ToyScenarioGenerator()
         env = JobShop(
             scenario_generator=toy_scenario_generator, schedule_generator=toy_schedule_generator
