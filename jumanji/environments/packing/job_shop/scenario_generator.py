@@ -150,7 +150,7 @@ class RandomScenarioGenerator(ScenarioGenerator):
         )
 
         # Set number of jobs to 0 for non-existing jobs
-        jobs_mask = jnp.less(jnp.arange(self.max_num_jobs), num_jobs)
+        jobs_mask = jnp.less(jnp.arange(self.max_num_jobs), num_jobs) #shape (max_num_jobs,)
         num_ops_per_job = jobs_mask * num_ops_per_job
 
         # Mask non-existing jobs and operations
