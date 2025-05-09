@@ -114,6 +114,22 @@ class TestRandomScenarioGenerator:
         assert jnp.all(scenario.ops_durations[num_jobs:] == -1)
         assert jnp.all(scenario.num_ops_per_job[num_jobs:] == 0)
 
+    def test_random_instance_generator_same_key(
+        self, random_scenario_generator: RandomScenarioGenerator
+    ) -> None:
+        """Validate that the random instance generator's call function is jit-able and compiles
+        only once. Also check that giving two different keys results in two different instances.
+        """
+        num_jobs = 3
+        num_machines = 4
+
+        chex.clear_trace_counter()
+        call_fn = jax.jit(chex.assert_max_traces(random_scenario_generator.__call__, n=1))
+        scenario1 = call_fn(jax.random.PRNGKey(1), num_jobs, num_machines)
+        assert isinstance(scenario1, Scenario)
+        scenario2 = call_fn(jax.random.PRNGKey(1), num_jobs, num_machines)
+        assert_trees_are_equal(scenario1, scenario2)
+
     def test_random_instance_generator_different_keys(
         self, random_scenario_generator: RandomScenarioGenerator
     ) -> None:
