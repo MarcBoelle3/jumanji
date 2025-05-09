@@ -150,19 +150,16 @@ class RandomScenarioGenerator(ScenarioGenerator):
         )
 
         # Set number of jobs to 0 for non-existing jobs
-        num_ops_per_job = jnp.less(jnp.arange(self.max_num_jobs), num_jobs) * num_ops_per_job
+        jobs_mask = jnp.less(jnp.arange(self.max_num_jobs), num_jobs)
+        num_ops_per_job = jobs_mask * num_ops_per_job
 
         # Mask non-existing jobs and operations
         ops_mask = jnp.less(
             jnp.tile(jnp.arange(self.max_num_ops), reps=(self.max_num_jobs, 1)),
             jnp.expand_dims(num_ops_per_job, axis=-1),
         )
-        jobs_mask = jnp.less(
-            jnp.arange(self.max_num_jobs),
-            num_jobs,
-        )[:, None]
 
-        total_mask = jnp.logical_and(ops_mask, jobs_mask)
+        total_mask = jnp.logical_and(ops_mask, jobs_mask[:, None])
 
         ops_machine_ids = jnp.where(total_mask, ops_machine_ids, jnp.array(-1, jnp.int32))
         ops_durations = jnp.where(total_mask, ops_durations, jnp.array(-1, jnp.int32))
