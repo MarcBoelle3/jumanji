@@ -19,7 +19,7 @@ import pytest
 from jumanji.environments.packing.job_shop.conftest import DummyScenarioGenerator
 from jumanji.environments.packing.job_shop.constructive.conftest import DummyGenerator
 from jumanji.environments.packing.job_shop.constructive.generator import (
-    StandardGenerator,
+    EmptyScheduleGenerator,
     ToyGenerator,
 )
 from jumanji.environments.packing.job_shop.constructive.types import State
@@ -82,24 +82,26 @@ class TestToyGenerator:
         assert_trees_are_equal(state1, state2)
 
 
-class TestStandardGenerator:
+class TestEmptyScheduleGenerator:
     @pytest.fixture
-    def standard_generator(self) -> StandardGenerator:
-        return StandardGenerator(
+    def empty_schedule_generator(self) -> EmptyScheduleGenerator:
+        return EmptyScheduleGenerator(
             num_jobs=20,
             num_machines=10,
             max_num_ops=15,
         )
 
-    def test_standard_generator__properties(self, standard_generator: StandardGenerator) -> None:
+    def test_empty_schedule_generator__properties(
+        self, empty_schedule_generator: EmptyScheduleGenerator
+    ) -> None:
         """Validate that the random instance generator has the correct properties."""
-        assert standard_generator.num_jobs == 20
-        assert standard_generator.num_machines == 10
-        assert standard_generator.max_num_ops == 15
+        assert empty_schedule_generator.num_jobs == 20
+        assert empty_schedule_generator.num_machines == 10
+        assert empty_schedule_generator.max_num_ops == 15
 
-    def test_standard_generator__call(
+    def test_empty_schedule_generator__call(
         self,
-        standard_generator: StandardGenerator,
+        empty_schedule_generator: EmptyScheduleGenerator,
         random_scenario_generator: RandomScenarioGenerator,
     ) -> None:
         """Validate that the random instance generator's call function is jit-able and compiles
@@ -110,7 +112,7 @@ class TestStandardGenerator:
         )
 
         chex.clear_trace_counter()
-        call_fn = jax.jit(chex.assert_max_traces(standard_generator.__call__, n=1))
+        call_fn = jax.jit(chex.assert_max_traces(empty_schedule_generator.__call__, n=1))
         state1 = call_fn(key=jax.random.PRNGKey(1), scenario=scenario)
         assert isinstance(state1, State)
 

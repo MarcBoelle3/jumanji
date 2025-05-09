@@ -24,8 +24,8 @@ from numpy.typing import NDArray
 from jumanji import specs
 from jumanji.env import Environment
 from jumanji.environments.packing.job_shop.constructive.generator import (
+    EmptyScheduleGenerator,
     Generator,
-    StandardGenerator,
 )
 from jumanji.environments.packing.job_shop.constructive.types import Observation, State
 from jumanji.environments.packing.job_shop.scenario_generator import (
@@ -117,7 +117,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
             max_num_ops=8,
             max_op_duration=6,
         )
-        self.schedule_generator = schedule_generator or StandardGenerator(
+        self.schedule_generator = schedule_generator or EmptyScheduleGenerator(
             num_jobs=20,
             num_machines=10,
             max_num_ops=8,

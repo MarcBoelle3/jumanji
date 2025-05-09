@@ -113,7 +113,7 @@ class ToyGenerator(Generator):
         return state
 
 
-class StandardGenerator(Generator):
+class EmptyScheduleGenerator(Generator):
     """Instance generator that initializes the state based on a given scenario.
     All machines are available at the beginning of the episode, and the scheduled times are
     initialized to -1 (no operation scheduled yet).
