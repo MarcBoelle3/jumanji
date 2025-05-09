@@ -46,6 +46,7 @@ class Scenario:
     ops_machine_ids: chex.Array  # (max_num_jobs, max_num_ops)
     ops_durations: chex.Array  # (max_num_jobs, max_num_ops)
     num_ops_per_job: chex.Array  # (max_num_jobs,)
+    key: chex.PRNGKey  # (2,)
 
 
 @dataclass

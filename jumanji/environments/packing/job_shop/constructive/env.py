@@ -166,7 +166,7 @@ class JobShop(Environment[State, specs.MultiDiscreteArray, Observation]):
         """
         # Generate a new problem instance
         scenario = self.scenario_generator(key, self.num_jobs, self.num_machines)
-        state = self.schedule_generator(key, scenario)
+        state = self.schedule_generator(scenario.key, scenario)
 
         # Create the action mask and update the state
         state.action_mask = self._create_action_mask(

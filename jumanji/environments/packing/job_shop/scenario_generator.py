@@ -57,6 +57,7 @@ class ScenarioGenerator(abc.ABC):
                 each operation, with -1 indicating that the operation does not exist.
               - num_ops_per_job: Array (max_num_jobs) indicating number of operations per job,
                 with 0 indicating that the job does not exist.
+              - key: jax random key used to generate the scenario.
         """
 
 
@@ -104,6 +105,7 @@ class ToyScenarioGenerator(ScenarioGenerator):
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             num_ops_per_job=jnp.array([4, 4, 2, 4, 3], jnp.int32),
+            key=jax.random.PRNGKey(0),
         )
 
         return scenario
@@ -173,6 +175,7 @@ class RandomScenarioGenerator(ScenarioGenerator):
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             num_ops_per_job=num_ops_per_job,
+            key=key,
         )
 
         return scenario
