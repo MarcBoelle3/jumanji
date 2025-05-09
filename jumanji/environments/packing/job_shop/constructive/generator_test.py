@@ -34,7 +34,7 @@ class TestDummyScheduleGenerator:
     def test_dummy_schedule_generator__properties(
         self, dummy_schedule_generator: DummyScheduleGenerator
     ) -> None:
-        """Validate that the dummy instance generator has the correct properties."""
+        """Validate that the dummy schedule generator has the correct properties."""
         assert dummy_schedule_generator.num_jobs == 3
         assert dummy_schedule_generator.num_machines == 3
         assert dummy_schedule_generator.max_num_ops == 3
@@ -44,7 +44,7 @@ class TestDummyScheduleGenerator:
         dummy_schedule_generator: DummyScheduleGenerator,
         dummy_scenario_generator: DummyScenarioGenerator,
     ) -> None:
-        """Validate that the dummy instance generator's call function behaves correctly,
+        """Validate that the dummy schedule generator's call function behaves correctly,
         that it is jit-table and compiles only once, and that it returns the same state
         for different keys.
         """
@@ -68,7 +68,7 @@ class TestToyScheduleGenerator:
     def test_toy_schedule_generator__properties(
         self, toy_schedule_generator: ToyScheduleGenerator
     ) -> None:
-        """Validate that the toy instance generator has the correct properties."""
+        """Validate that the toy schedule generator has the correct properties."""
         assert toy_schedule_generator.num_jobs == 5
         assert toy_schedule_generator.num_machines == 4
         assert toy_schedule_generator.max_num_ops == 4
@@ -78,7 +78,7 @@ class TestToyScheduleGenerator:
         toy_schedule_generator: ToyScheduleGenerator,
         toy_scenario_generator: ToyScenarioGenerator,
     ) -> None:
-        """Validate that the toy instance generator's call function behaves correctly,
+        """Validate that the toy schedule generator's call function behaves correctly,
         that it is jit-able and compiles only once, and that it returns the same state
         for different keys.
         """
@@ -102,7 +102,7 @@ class TestEmptyScheduleGenerator:
     def test_empty_schedule_generator__properties(
         self, empty_schedule_generator: EmptyScheduleGenerator
     ) -> None:
-        """Validate that the random instance generator has the correct properties."""
+        """Validate that the random schedule generator has the correct properties."""
         assert empty_schedule_generator.num_jobs == 20
         assert empty_schedule_generator.num_machines == 10
         assert empty_schedule_generator.max_num_ops == 15
@@ -112,7 +112,7 @@ class TestEmptyScheduleGenerator:
         empty_schedule_generator: EmptyScheduleGenerator,
         random_scenario_generator: RandomScenarioGenerator,
     ) -> None:
-        """Validate that the random instance generator's call function is jit-able and compiles
+        """Validate that the random schedule generator's call function is jit-able and compiles
         only once. Also check that giving two different keys results in two different instances.
         """
         scenario = random_scenario_generator(
