@@ -118,7 +118,7 @@ class TestRandomScenarioGenerator:
         self, random_scenario_generator: RandomScenarioGenerator
     ) -> None:
         """Validate that the random instance generator's call function is jit-able and compiles
-        only once. Also check that giving two different keys results in two different instances.
+        only once. Also check that giving the same key results in the same instance.
         """
         num_jobs = 3
         num_machines = 4
