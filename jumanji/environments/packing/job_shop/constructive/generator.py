@@ -18,11 +18,12 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from jumanji.environments.packing.job_shop.types import State
+from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState
+from jumanji.environments.packing.job_shop.types import Scenario
 
 
-class Generator(abc.ABC):
-    """Defines the abstract `Generator` base class. A `Generator` is responsible
+class ScheduleGenerator(abc.ABC):
+    """Defines the abstract `ScheduleGenerator` base class. A `ScheduleGenerator` is responsible
     for generating a problem instance when the environment is reset.
     """
 
@@ -31,45 +32,42 @@ class Generator(abc.ABC):
         num_jobs: int,
         num_machines: int,
         max_num_ops: int,
-        max_op_duration: int,
     ):
-        """Abstract class implementing the attributes `num_jobs`, `num_machines`, `max_num_ops`,
-         and `max_op_duration`.
+        """Abstract class implementing the attributes `num_jobs`, `num_machines`, `max_num_ops`.
 
         Args:
             num_jobs: the number of jobs that need to be scheduled.
             num_machines: the number of machines that the jobs can be scheduled on.
             max_num_ops: the maximum number of operations for any given job.
-            max_op_duration: the maximum processing time of any given operation.
         """
         self.num_jobs = num_jobs
         self.num_machines = num_machines
         self.max_num_ops = max_num_ops
-        self.max_op_duration = max_op_duration
 
     @abc.abstractmethod
-    def __call__(self, key: chex.PRNGKey) -> State:
-        """Call method responsible for generating a new state.
+    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> ConstructiveState:
+        """Call method responsible for generating a new state based on a given scenario.
 
         Args:
             key: jax random key in case stochasticity is used in the instance generation process.
-
+            scenario: a `Scenario` object containing the problem instance.
         Returns:
             A `JobShop` environment state.
         """
 
 
-class ToyGenerator(Generator):
-    """`Generator` that can be used as an example. It deterministically outputs a hardcoded
+class ToyScheduleGenerator(ScheduleGenerator):
+    """`ScheduleGenerator` that can be used as an example. It deterministically outputs a hardcoded
     instance with 5 jobs, 4 machines, a max of 4 ops for any job, and max duration of 4 time
     steps for any operation. By construction, this generator has a known, optimal makespan
     of 8 time steps.
     """
 
     def __init__(self) -> None:
-        super().__init__(num_jobs=5, num_machines=4, max_num_ops=4, max_op_duration=4)
+        super().__init__(num_jobs=5, num_machines=4, max_num_ops=4)
 
-    def __call__(self, key: chex.PRNGKey) -> State:
+    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> ConstructiveState:
+        del scenario
         del key
 
         ops_machine_ids = jnp.array(
@@ -100,7 +98,7 @@ class ToyGenerator(Generator):
         ops_mask = ops_machine_ids != -1
         step_count = jnp.array(0, jnp.int32)
 
-        state = State(
+        state = ConstructiveState(
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             ops_mask=ops_mask,
@@ -115,48 +113,19 @@ class ToyGenerator(Generator):
         return state
 
 
-class RandomGenerator(Generator):
-    """Instance generator that generates random instances of the job shop scheduling problem. Given
-    the number of machines, number of jobs, max number of operations for any job, and max duration
-    of any operation, the generation works as follows: for each job, we sample the number of ops
-    for that job. Then, for each operation, a machine_id and duration are sampled, both from random
-    uniform distributions. Finally, padding is done for jobs whose number of operations is less than
-    the max.
+class EmptyScheduleGenerator(ScheduleGenerator):
+    """Instance generator that initializes the state based on a given scenario.
+    All machines are available at the beginning of the episode, and the scheduled times are
+    initialized to -1 (no operation scheduled yet).
     """
 
-    def __init__(self, num_jobs: int, num_machines: int, max_num_ops: int, max_op_duration: int):
-        super().__init__(num_jobs, num_machines, max_num_ops, max_op_duration)
+    def __init__(self, num_jobs: int, num_machines: int, max_num_ops: int):
+        super().__init__(num_jobs, num_machines, max_num_ops)
 
-    def __call__(self, key: chex.PRNGKey) -> State:
-        key, machine_key, duration_key, ops_key = jax.random.split(key, num=4)
-
-        # Randomly sample machine IDs and durations
-        ops_machine_ids = jax.random.randint(
-            machine_key,
-            shape=(self.num_jobs, self.max_num_ops),
-            minval=0,
-            maxval=self.num_machines,
-        )
-        ops_durations = jax.random.randint(
-            duration_key,
-            shape=(self.num_jobs, self.max_num_ops),
-            minval=1,
-            maxval=self.max_op_duration + 1,
-        )
-
-        # Vary the number of ops across jobs
-        num_ops_per_job = jax.random.randint(
-            ops_key,
-            shape=(self.num_jobs,),
-            minval=1,
-            maxval=self.max_num_ops + 1,
-        )
-        mask = jnp.less(
-            jnp.tile(jnp.arange(self.max_num_ops), reps=(self.num_jobs, 1)),
-            jnp.expand_dims(num_ops_per_job, axis=-1),
-        )
-        ops_machine_ids = jnp.where(mask, ops_machine_ids, jnp.array(-1, jnp.int32))
-        ops_durations = jnp.where(mask, ops_durations, jnp.array(-1, jnp.int32))
+    def __call__(self, key: chex.PRNGKey, scenario: Scenario) -> ConstructiveState:
+        # Generate a random scenario
+        ops_machine_ids = scenario.ops_machine_ids
+        ops_durations = scenario.ops_durations
 
         # Initially, all machines are available (the value self.num_jobs corresponds to no-op)
         machines_job_ids = jnp.full(self.num_machines, self.num_jobs, jnp.int32)
@@ -169,7 +138,7 @@ class RandomGenerator(Generator):
         # Time starts at 0
         step_count = jnp.array(0, jnp.int32)
 
-        state = State(
+        state = ConstructiveState(
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
             ops_mask=ops_mask,
