@@ -40,6 +40,7 @@ def update_node_fn(
     _globals: chex.Array,
 ) -> chex.Array:
     """Update the date and completion status of a node based on the received attributes.
+       Used both in forward and backward pass.
 
     Args:
         nodes: Array of nodes with shape (num_nodes, 3)
@@ -50,22 +51,32 @@ def update_node_fn(
         Array of updated nodes with shape (num_nodes, 3)
     """
 
-    # Each node has a feature (p, d, c) with p the processing time,
-    # d the date and c the completion status
-    node_p = nodes[:, 0]  # remains unchanged
+    # Each node has a feature (duration, start_time, completion) that updates accross message passing:
+    # duration the processing time (float)
+    # start_time the current start time of the operation (float)
+    # completion the current completion status (0 when completed, 1 when not completed)
 
-    # Update date and completion status if neighbours
-    received_d = received_attributes[:, 0]
-    received_c = received_attributes[:, 1]
+    # The duration of the operation remains unchanged
+    node_duration = nodes[:, 0]
 
-    return jnp.stack([node_p, received_d, received_c], axis=-1)
+    # Update start_time and completion status from incoming edges
+    # received_attributes contains (start_time, completion) of the sender node
+    received_date = received_attributes[:, 0]
+    received_completion = received_attributes[:, 1]
+
+    return jnp.stack([node_duration, received_date, received_completion], axis=-1)
 
 
-def forward_pass_jraph(
+def compute_earliest_start_times_and_makespan(
     adj_mat: chex.Array, ops_durations: chex.Array, max_num_edges: jnp.int32
 ) -> Tuple[chex.Array, jnp.float32]:
     """Compute earliest start times and makespan using jraph message passing with max pooling.
-        First part of the algorithm in Section 4.4 of the paper.
+       It is an adaptation for GPU of the traditional CPM (Critical Path Method) which computes the
+       starting times of the operations recursively.
+       When starting, the source node is the only one to be scheduled, and message passing propagates
+       the start times recursively to the target node, which in the end contains the makespan.
+       First part of the algorithm in Section 4.4 of the paper (https://arxiv.org/abs/2211.10936).
+
 
     Args:
         adj_mat: Adjacency matrix of the disjunctive graph
@@ -86,15 +97,20 @@ def forward_pass_jraph(
     # Add sink and target nodes with duration of 0
     ops_durations = jnp.concatenate([jnp.array([0.0]), ops_durations, jnp.array([0.0])])
 
-    # Create node features: (processing time, date, completion status)
+    # Create node features: (duration, start_time, completion)
     node_features = jnp.zeros((num_nodes, 3))
-    # Initialize features as in the paper
+
+    # Initialize completion status to 1 (no completion) except for the source node
     node_features = node_features.at[:, 2].set(jnp.ones(num_nodes))
     node_features = node_features.at[0].set(jnp.array([0.0, 0.0, 0.0]))  # Source node
-    node_features = node_features.at[:, 0].set(ops_durations)  # Add processing times
+    # Set operation durations (0 for start and target nodes)
+    node_features = node_features.at[:, 0].set(ops_durations)
 
-    # Create edge features
-    edge_features = jnp.zeros((max_num_edges, 2))  # dummy initialization
+    # Dummy initialization of edge features
+    # In jraph, edge features are used to propagate information between nodes
+    # We will use them to propagate the start times and completion status
+    edge_features = jnp.zeros((max_num_edges, 2))
+
     senders, receivers = jnp.nonzero(adj_mat > 0, size=max_num_edges, fill_value=0)
 
     # Create graph
@@ -114,26 +130,30 @@ def forward_pass_jraph(
         _receiver_features: chex.Array,
         _globals: chex.Array,
     ) -> chex.Array:
-        """Update the edge features based on the sender and receiver features.
+        """Update the edge features based on the node features (only the sender features are used).
+           Due to jraph framework, all args are needed but only sender_features is used.
 
         Args:
             _edges: Array of edge features with shape (num_edges, 2). Not used.
-            sender_features: Array of sender features with shape (num_edges, 3)
-            _receiver_features: Array of receiver features with shape (num_edges, 3). Not used.
-            _globals: Array of globals with shape (num_globals, 1). Not used.
+            sender_features: Array of sender features with shape (num_edges, 3) containing:
+                - duration of the operation (float)
+                - current start_time of the operation (float)
+                - current completion status (0 or 1)
+            _receiver_features: Not used.
+            _globals: Not used.
 
         Returns:
             Array of updated edge features with shape (num_edges, 2)
         """
 
-        sender_p = sender_features[:, 0]
-        sender_d = sender_features[:, 1]
-        sender_c = sender_features[:, 2]
+        sender_duration = sender_features[:, 0]
+        sender_start_time = sender_features[:, 1]
+        sender_completion = sender_features[:, 2]
 
-        new_d = sender_p + (1.0 - sender_c) * sender_d
-        new_c = sender_c
+        new_start_time = sender_start_time + (1.0 - sender_completion) * sender_duration
+        new_completion = sender_completion
 
-        return jnp.stack([new_d, new_c], axis=-1)
+        return jnp.stack([new_start_time, new_completion], axis=-1)
 
     # Create message passing layer
     net = jraph.GraphNetwork(
@@ -179,16 +199,23 @@ def forward_pass_jraph(
     return output_graph.nodes[:, 1], output_graph.nodes[-1, 1]
 
 
-def backward_pass_jraph(
+def compute_latest_start_times(
     adj_mat: chex.Array, ops_durations: chex.Array, makespan: jnp.float32, max_num_edges: jnp.int32
 ) -> chex.Array:
     """Compute latest start times using message passing with max pooling.
-        Second part of the algorithm in Section 4.4 of the paper.
+       It is the same method as the forward pass but with reversed edges and propagation from target
+       to source, to obtain the latest start times.
+       The latest start times of operations are the latest possible starting times for every operation
+       such that the makespan is not exceeded.
+       Second part of the algorithm in Section 4.4 of the paper (https://arxiv.org/abs/2211.10936).
 
     Args:
         adj_mat: Adjacency matrix of the disjunctive graph
                  shape (max_num_jobs x max_num_ops + 2, max_num_jobs x max_num_ops + 2)
         ops_durations: Processing times of the operations (max_num_jobs, max_num_ops)
+        makespan: Makespan of the schedule obtained from the forward pass (float)
+        max_num_edges: Maximum number of edges in the graph.
+
     Returns:
         Array of latest start times for each node.
         Latest start times correspond, for each operation, to start the latest possible
@@ -201,17 +228,21 @@ def backward_pass_jraph(
     # add sink and target nodes with duration of 0
     ops_durations = jnp.concatenate([jnp.array([0.0]), ops_durations, jnp.array([0.0])])
 
-    # Create node features: (processing time, date, completion status)
+    # Create node features: (duration, negative_start_time, completion)
     node_features = jnp.ones((num_nodes, 3))
+    # Initialize start times to -1 except for the target node
+    # (which has negative start time = - makespan)
     node_features = node_features.at[:, 1].set(-jnp.ones(num_nodes))
-    node_features = node_features.at[-1].set(jnp.array([0.0, -makespan, 0.0]))  # Source node
-    node_features = node_features.at[:, 0].set(ops_durations)  # add processing times
+    node_features = node_features.at[-1].set(jnp.array([0.0, -makespan, 0.0]))
 
-    # Create edge features: edge weights
+    # Set operation durations (0 for start and target nodes)
+    node_features = node_features.at[:, 0].set(ops_durations)
+
     # Transposed matrix to get reversed edges
     senders, receivers = jnp.nonzero(adj_mat.T > 0, size=max_num_edges, fill_value=num_nodes - 1)
 
-    edge_features = jnp.zeros((max_num_edges, 2))  # dummy initialization
+    # Dummy initialization of edge features
+    edge_features = jnp.zeros((max_num_edges, 2))
 
     graph = jraph.GraphsTuple(
         nodes=node_features,
@@ -222,7 +253,6 @@ def backward_pass_jraph(
         n_edge=jnp.array([len(senders)]),
         globals=None,
     )
-    jax.debug.print("graph created")
 
     def update_edge_fn(
         _edges: chex.Array,
@@ -230,16 +260,30 @@ def backward_pass_jraph(
         _receiver_features: chex.Array,
         _globals: chex.Array,
     ) -> chex.Array:
-        # sender_features: [num_edges, 3]  with (p, d, c)
+        """Update the edge features based on the node features (only the sender features are used).
+           Due to jraph framework, all args are needed but only sender_features is used.
 
-        sender_p = _receiver_features[:, 0]
-        sender_d = sender_features[:, 1]
-        sender_c = sender_features[:, 2]
+        Args:
+            _edges: Array of edge features with shape (num_edges, 2). Not used.
+            sender_features: Array of sender features with shape (num_edges, 3) containing:
+                - duration of the operation (float)
+                - current negative start time of the operation (float)
+                - current completion status (0 or 1)
+            _receiver_features: Not used.
+            _globals: Not used.
 
-        new_d = sender_p + (1.0 - sender_c) * sender_d
-        new_c = sender_c
+        Returns:
+            Array of updated edge features with shape (num_edges, 2)
+        """
 
-        return jnp.stack([new_d, new_c], axis=-1)
+        sender_duration = _receiver_features[:, 0]
+        sender_start_time = sender_features[:, 1]
+        sender_completion = sender_features[:, 2]
+
+        new_negative_start_time = sender_start_time + (1.0 - sender_completion) * sender_duration
+        new_completion = sender_completion
+
+        return jnp.stack([new_negative_start_time, new_completion], axis=-1)
 
     net = jraph.GraphNetwork(
         update_node_fn=update_node_fn,
@@ -271,9 +315,10 @@ def backward_pass_jraph(
             Updated graph state.
         """
         output_graph = net(graph)
+        # Keep target node to (0, -makespan, 0)
         output_graph = output_graph._replace(
             nodes=output_graph.nodes.at[-1].set(jnp.array([0.0, -makespan, 0.0]))
-        )  # keep source node to (0, 0)
+        )
         return output_graph
 
     # Run the message passing loop until the source node is completed
@@ -283,7 +328,7 @@ def backward_pass_jraph(
     return -output_graph.nodes[:, 1]
 
 
-def forward_backward_pass_jraph(
+def compute_est_lst_makespan(
     adj_mat: chex.Array, ops_durations: chex.Array, max_num_edges: jnp.int32
 ) -> Tuple[chex.Array, chex.Array, jnp.float32]:
     """Compute earliest, latest start times and makespan.
@@ -298,6 +343,6 @@ def forward_backward_pass_jraph(
         makespan: makespan of the schedule (float)
     """
 
-    est, makespan = forward_pass_jraph(adj_mat, ops_durations, max_num_edges)
-    lst = backward_pass_jraph(adj_mat, ops_durations, makespan, max_num_edges)
+    est, makespan = compute_earliest_start_times_and_makespan(adj_mat, ops_durations, max_num_edges)
+    lst = compute_latest_start_times(adj_mat, ops_durations, makespan, max_num_edges)
     return est, lst, makespan
