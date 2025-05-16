@@ -51,7 +51,8 @@ def update_node_fn(
         Array of updated nodes with shape (num_nodes, 3)
     """
 
-    # Each node has a feature (duration, start_time, completion) that updates accross message passing:
+    # Each node has a feature (duration, start_time, completion) that updates accross
+    # message passing:
     # duration the processing time (float)
     # start_time the current start time of the operation (float)
     # completion the current completion status (0 when completed, 1 when not completed)
@@ -72,9 +73,9 @@ def compute_earliest_start_times_and_makespan(
 ) -> Tuple[chex.Array, jnp.float32]:
     """Compute earliest start times and makespan using jraph message passing with max pooling.
        It is an adaptation for GPU of the traditional CPM (Critical Path Method) which computes the
-       starting times of the operations recursively.
-       When starting, the source node is the only one to be scheduled, and message passing propagates
-       the start times recursively to the target node, which in the end contains the makespan.
+       starting times of the operations recursively.When starting, the source node is the only one
+       to be scheduled, and message passing propagates the start times recursively to the target
+       node, which in the end contains the makespan.
        First part of the algorithm in Section 4.4 of the paper (https://arxiv.org/abs/2211.10936).
 
 
@@ -204,9 +205,8 @@ def compute_latest_start_times(
 ) -> chex.Array:
     """Compute latest start times using message passing with max pooling.
        It is the same method as the forward pass but with reversed edges and propagation from target
-       to source, to obtain the latest start times.
-       The latest start times of operations are the latest possible starting times for every operation
-       such that the makespan is not exceeded.
+       to source, to obtain the latest start times. The latest start times of operations are the
+       latest possible starting times for every operation such that the makespan is not exceeded.
        Second part of the algorithm in Section 4.4 of the paper (https://arxiv.org/abs/2211.10936).
 
     Args:
