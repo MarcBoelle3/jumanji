@@ -30,7 +30,8 @@ MAX_NUM_EDGES = 50
 
 
 class TestComputeMakespanJraph:
-    """Test suite for the compute_earliest_start_times_and_makespan, and compute_latest_start_times functions."""
+    """Test suite for the compute_earliest_start_times_and_makespan,
+    compute_latest_start_times and compute_est_lst_makespan functions."""
 
     @pytest.fixture
     def matrices_example(self) -> Tuple[chex.Array, chex.Array, chex.Array]:
@@ -275,7 +276,6 @@ class TestComputeMakespanJraph:
 
         expected_est = jnp.array([0.0, 0.0, 2.0, 5.0, 6.0])
         expected_lst = jnp.array([0.0, 0.0, 2.0, 5.0, 6.0])
-        expected_makespan = 6
 
         assert jnp.allclose(est, expected_est)
         assert jnp.allclose(lst, expected_lst)
