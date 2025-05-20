@@ -126,9 +126,20 @@ def get_critical_operations(
     # Right end array is used to
     right_end_array = jnp.full(num_ops_total, -1, dtype=jnp.int32)
 
-    def update_critical_block_with_pair(
-        carry: Tuple[chex.Array, chex.Array], critical_block_pair: Tuple[jnp.int32, jnp.int32]
-    ) -> Tuple[Tuple[chex.Array, chex.Array], None]:
+    def cond_fun(loop_state: Tuple[jnp.int32, Tuple[chex.Array, chex.Array]]) -> jnp.bool_:
+        """Condition function for the while loop.
+        The iteration stops when we have processed all the valid critical block pairs (i.e.
+        while start_idx and end_idx are both not -1).
+        """
+        i, _ = loop_state
+        start_idx, end_idx = critical_block_pairs[i]
+        return jnp.logical_and(
+            i < critical_block_pairs.shape[0], jnp.logical_and(start_idx != -1, end_idx != -1)
+        )
+
+    def body_fun(
+        loop_state: Tuple[jnp.int32, Tuple[chex.Array, chex.Array]],
+    ) -> Tuple[jnp.int32, Tuple[chex.Array, chex.Array]]:
         """Update the critical block information based on the critical block pair.
            During one update, if the pair (start_idx, end_idx) is valid, we update the
            critical block information as follows:
@@ -140,59 +151,39 @@ def get_critical_operations(
            - left_neighbor of end_idx is set to the start_idx operation.
 
         Args:
-            carry: Tuple containing (critical_block_info, right_end_array)
-            critical_block_pair: Tuple containing (start_idx, end_idx)
+            loop_state: Tuple containing (i, (critical_block_info, right_end_array))
+                   with i being the current index in the critical_block_pairs array
 
         Returns:
             Tuple containing (updated critical_block_info, updated right_end_array)
         """
+        i, (critical_block_info, right_end_array) = loop_state
+        start_idx, end_idx = critical_block_pairs[i]
 
-        start_idx, end_idx = critical_block_pair
+        block_id = critical_block_info[start_idx, 1]
+        left_end_of_start_idx = critical_block_info[start_idx, 6]
 
-        valid_condition = jnp.logical_and(start_idx != -1, end_idx != -1)
-
-        def if_valid_pair(
-            carry: Tuple[chex.Array, chex.Array], critical_block_pair: Tuple[jnp.int32, jnp.int32]
-        ) -> Tuple[Tuple[chex.Array, chex.Array], None]:
-            critical_block_info, right_end_array = carry
-            start_idx, end_idx = critical_block_pair
-
-            block_id = critical_block_info[start_idx, 1]
-            left_end_of_start_idx = critical_block_info[start_idx, 6]
-
-            critical_block_info = (
-                critical_block_info.at[end_idx, 1]
-                .set(block_id)  # num_critical_block
-                .at[start_idx, 3]
-                .set(0)  # is_right = 0 for start_idx
-                .at[start_idx, 5]
-                .set(end_idx)  # right_neighbor for start_idx
-                .at[end_idx, 4]
-                .set(start_idx)  # left_neighbor for end_idx
-                .at[end_idx, 6]
-                .set(left_end_of_start_idx)  # left_end for end_idx
-            )
-
-            # set current right_end of the critical block
-            right_end_array = right_end_array.at[block_id].set(end_idx)
-
-            return (critical_block_info, right_end_array), None
-
-        def if_invalid_pair(
-            carry: Tuple[chex.Array, chex.Array], critical_block_pair: Tuple[jnp.int32, jnp.int32]
-        ) -> Tuple[Tuple[chex.Array, chex.Array], None]:
-            return carry, None
-
-        new_state, _ = jax.lax.cond(
-            valid_condition, if_valid_pair, if_invalid_pair, carry, critical_block_pair
+        critical_block_info = (
+            critical_block_info.at[end_idx, 1]
+            .set(block_id)  # num_critical_block
+            .at[start_idx, 3]
+            .set(0)  # is_right = 0 for start_idx
+            .at[start_idx, 5]
+            .set(end_idx)  # right_neighbor for start_idx
+            .at[end_idx, 4]
+            .set(start_idx)  # left_neighbor for end_idx
+            .at[end_idx, 6]
+            .set(left_end_of_start_idx)  # left_end for end_idx
         )
-        return new_state, None
 
-    # Initial state = (critical_block_info, right_end_array)
-    (final_critical_block_info, right_end_array), _ = jax.lax.scan(
-        update_critical_block_with_pair,
-        (critical_block_info, right_end_array),
-        critical_block_pairs,
+        right_end_array = right_end_array.at[block_id].set(end_idx)
+
+        return (i + 1, (critical_block_info, right_end_array))
+
+    init_state = (0, (critical_block_info, right_end_array))
+
+    _, (final_critical_block_info, right_end_array) = jax.lax.while_loop(
+        cond_fun, body_fun, init_state
     )
 
     # Set right_end of each operation to the right_end of its critical block
