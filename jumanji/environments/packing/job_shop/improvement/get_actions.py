@@ -12,11 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import IntEnum
 from typing import Tuple
 
 import chex
 import jax
 import jax.numpy as jnp
+
+
+class CBFields(IntEnum):
+    """Fields of the critical block information array."""
+
+    IS_ON_CRITICAL_PATH = 0  # 1 if the operation is on the critical path, 0 otherwise
+    BLOCK_ID = 1  # the number of the critical block the operation belongs to
+    IS_LEFT = 2  # 1 if the operation is a left operation of a critical block, 0 otherwise
+    IS_RIGHT = 3  # 1 if the operation is a right operation of a critical block, 0 otherwise
+    LEFT_NEIGHBOR = 4  # the left neighbor of the operation
+    RIGHT_NEIGHBOR = 5  # the right neighbor of the operation
+    LEFT_END = 6  # operation index of the left end of the critical block
+    RIGHT_END = 7  # operation index of the right end of the critical block
 
 
 def get_critical_operations(
@@ -42,15 +56,7 @@ def get_critical_operations(
         ops_durations: array of operation durations, shape (max_num_jobs * max_num_ops,)
 
     Returns:
-        Array of indices of critical operations of shape (num_ops_total, 8) containing :
-        - is_on_critical_path : 1 if the operation is on the critical path, 0 otherwise
-        - num_critical_block : the number of the critical block the operation belongs to
-        - is_left : 1 if the operation is a left operation of a critical block, 0 otherwise
-        - is_right : 1 if the operation is a right operation of a critical block, 0 otherwise
-        - left_neighbor : the left neighbor of the operation
-        - right_neighbor : the right neighbor of the operation
-        - left_end : operation index of the left end of the critical block
-        - right_end : operation index of the right end of the critical block
+        Array of indices of critical operations of shape (num_ops_total, 8), see CBFields.
     """
     num_ops_total = max_num_ops * max_num_jobs
 
@@ -111,16 +117,21 @@ def get_critical_operations(
     critical_block_info = jnp.zeros((num_ops_total, 8), dtype=jnp.int32)
 
     # Set is_on_critical_path
-    critical_block_info = critical_block_info.at[:, 0].set(critical_mask)
+    critical_block_info = critical_block_info.at[:, CBFields.IS_ON_CRITICAL_PATH].set(critical_mask)
     # Each operation initially defines its own critical block,
     # set up num_critical_block and left_end accordingly (updated during scan)
-    critical_block_info = critical_block_info.at[:, 1].set(jnp.arange(num_ops_total))
-    critical_block_info = critical_block_info.at[:, 6].set(jnp.arange(num_ops_total))
+    critical_block_info = critical_block_info.at[:, CBFields.BLOCK_ID].set(
+        jnp.arange(num_ops_total)
+    )
+    critical_block_info = critical_block_info.at[:, CBFields.LEFT_END].set(
+        jnp.arange(num_ops_total)
+    )
     # All ops are initially marked as right ends (updated during scan)
-    critical_block_info = critical_block_info.at[:, 3].set(1)
+    critical_block_info = critical_block_info.at[:, CBFields.IS_RIGHT].set(1)
     # Initialize neighbors and right_end to -1
-    critical_block_info = critical_block_info.at[:, 4:6].set(-1)
-    critical_block_info = critical_block_info.at[:, 7].set(-1)
+    critical_block_info = critical_block_info.at[:, CBFields.LEFT_NEIGHBOR].set(-1)
+    critical_block_info = critical_block_info.at[:, CBFields.RIGHT_NEIGHBOR].set(-1)
+    critical_block_info = critical_block_info.at[:, CBFields.RIGHT_END].set(-1)
 
     # Initialize right_end_array to -1
     # Right end array is used to
@@ -133,9 +144,7 @@ def get_critical_operations(
         """
         i, _ = loop_state
         start_idx, end_idx = critical_block_pairs[i]
-        return jnp.logical_and(
-            i < critical_block_pairs.shape[0], jnp.logical_and(start_idx != -1, end_idx != -1)
-        )
+        return jnp.logical_and(i < num_ops_total, jnp.logical_and(start_idx != -1, end_idx != -1))
 
     def body_fun(
         loop_state: Tuple[jnp.int32, Tuple[chex.Array, chex.Array]],
@@ -164,16 +173,16 @@ def get_critical_operations(
         left_end_of_start_idx = critical_block_info[start_idx, 6]
 
         critical_block_info = (
-            critical_block_info.at[end_idx, 1]
-            .set(block_id)  # num_critical_block
-            .at[start_idx, 3]
-            .set(0)  # is_right = 0 for start_idx
-            .at[start_idx, 5]
-            .set(end_idx)  # right_neighbor for start_idx
-            .at[end_idx, 4]
-            .set(start_idx)  # left_neighbor for end_idx
-            .at[end_idx, 6]
-            .set(left_end_of_start_idx)  # left_end for end_idx
+            critical_block_info.at[end_idx, CBFields.BLOCK_ID]
+            .set(block_id)
+            .at[start_idx, CBFields.IS_RIGHT]
+            .set(0)
+            .at[start_idx, CBFields.RIGHT_NEIGHBOR]
+            .set(end_idx)
+            .at[end_idx, CBFields.LEFT_NEIGHBOR]
+            .set(start_idx)
+            .at[end_idx, CBFields.LEFT_END]
+            .set(left_end_of_start_idx)
         )
 
         right_end_array = right_end_array.at[block_id].set(end_idx)
@@ -189,13 +198,13 @@ def get_critical_operations(
     # Set right_end of each operation to the right_end of its critical block
     block_ids = final_critical_block_info[:, 1]
     right_ends = jnp.where(block_ids != -1, right_end_array[block_ids], -1)
-    final_critical_block_info = final_critical_block_info.at[:, 7].set(right_ends)
+    final_critical_block_info = final_critical_block_info.at[:, CBFields.RIGHT_END].set(right_ends)
 
     # For each critical block, find left operations.
     # Due to the initialization of num_critical_block, the left operation are the ones
     # with index equal to num_critical_block.
-    final_critical_block_info = final_critical_block_info.at[:, 2].set(
-        final_critical_block_info[:, 1] == jnp.arange(num_ops_total)
+    final_critical_block_info = final_critical_block_info.at[:, CBFields.IS_LEFT].set(
+        final_critical_block_info[:, CBFields.BLOCK_ID] == jnp.arange(num_ops_total)
     )
 
     return final_critical_block_info
@@ -213,9 +222,9 @@ def get_action_mask_n5(critical_block_info: chex.Array, max_num_ops: int) -> che
     num_ops_total = critical_block_info.shape[0]
 
     # Extract left and right ends of critical blocks
-    is_critical = critical_block_info[:, 0]
-    is_left_end = critical_block_info[:, 2]
-    is_right_end = critical_block_info[:, 3]
+    is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH]
+    is_left_end = critical_block_info[:, CBFields.IS_LEFT]
+    is_right_end = critical_block_info[:, CBFields.IS_RIGHT]
 
     # Mask operations that are both left and right ends
     # (1 operation per critical block, no possible action)
@@ -223,8 +232,8 @@ def get_action_mask_n5(critical_block_info: chex.Array, max_num_ops: int) -> che
     is_right_end_only = is_critical & is_right_end & ~is_left_end
 
     # Get left and right neighbors
-    left_neighbors = critical_block_info[:, 4]
-    right_neighbors = critical_block_info[:, 5]
+    left_neighbors = critical_block_info[:, CBFields.LEFT_NEIGHBOR]
+    right_neighbors = critical_block_info[:, CBFields.RIGHT_NEIGHBOR]
 
     # Get job indices of operations and their neighbors
     ops_idx = jnp.arange(num_ops_total)
@@ -269,8 +278,8 @@ def select_operations_to_switch(
     # of the critical block.
     neighbor_idx = jnp.where(
         neighborhood == 5,
-        critical_block_info[chosen_op_idx, 4 + left_or_right],
-        critical_block_info[chosen_op_idx, 6 + left_or_right],
+        critical_block_info[chosen_op_idx, CBFields.LEFT_NEIGHBOR + left_or_right],
+        critical_block_info[chosen_op_idx, CBFields.LEFT_END + left_or_right],
     )
 
     # If left neighbor, return [neighbor_idx, chosen_op_idx] to maintain i before j convention
