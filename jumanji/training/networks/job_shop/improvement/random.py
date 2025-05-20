@@ -12,10 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from jumanji.environments.packing.job_shop.constructive.env import JobShop
-from jumanji.environments.packing.job_shop.constructive.types import ConstructiveState, Observation
-from jumanji.environments.packing.job_shop.improvement.env import JobShop as JobShopImprovement
-from jumanji.environments.packing.job_shop.improvement.types import ImprovementState
-from jumanji.environments.packing.job_shop.improvement.types import (
-    Observation as ImprovementObservation,
+from jumanji.training.networks.masked_categorical_random import (
+    make_masked_categorical_random_ndim
 )
+from jumanji.training.networks.protocols import RandomPolicy
+from jumanji.environments.packing.job_shop.improvement.env import JobShop as JobShopImprovement
+
+def make_random_policy_job_shop_improvement(job_shop_improvement: JobShopImprovement) -> RandomPolicy:
+    """Make random policy for `JobShopImprovement`."""
+    action_spec_num_values = job_shop_improvement.action_spec.num_values
+
+    return make_masked_categorical_random_ndim(action_spec_num_values=action_spec_num_values)
+
+

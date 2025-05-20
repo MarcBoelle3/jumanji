@@ -63,6 +63,28 @@ def make_random_select_action_fn(
 
     return select_action
 
+def make_masked_categorical_random_ndim_for_test(
+    action_spec_num_values: chex.Array,
+) -> SelectActionFn:
+    def policy(key: chex.PRNGKey, observation: chex.ArrayTree) -> chex.Array:
+        """Sample uniformly at random from a joint distribution with masking"""
+        n = action_spec_num_values.shape[0]
+        action_mask = observation.action_mask.reshape(-1)
+        flatten_logits = jnp.where(
+            action_mask,
+            jnp.zeros_like(action_mask),
+            -jnp.finfo("float32").max,
+        )
+        flat_action = jax.random.categorical(key, flatten_logits)
+        action_components = []
+        for i in range(n - 1, 0, -1):
+            flat_action, remainder = jnp.divmod(flat_action, action_spec_num_values[i])
+            action_components.append(remainder)
+        action_components.append(flat_action)
+        action = jnp.stack(list(reversed(action_components)), axis=-1)
+        return action
+
+    return policy
 
 def check_env_does_not_smoke(
     env: Environment,

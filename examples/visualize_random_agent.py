@@ -21,7 +21,7 @@ from hydra import compose, initialize
 
 from jumanji.training.setup_train import setup_agent, setup_env
 
-envs = [
+"""envs = [
     "bin_pack",
     "cleaner",
     "connector",
@@ -46,7 +46,9 @@ envs = [
     "sudoku",
     "tetris",
     "tsp",
-]
+]"""
+
+envs = ["job_shop"]
 
 
 def download_file(url: str, file_path: str) -> None:

@@ -36,6 +36,7 @@ class JobShopViewer(MatplotlibViewer[JobShopState]):
         max_num_ops: int,
         max_op_duration: int,
         render_mode: str = "human",
+        show_critical_path: bool = False,
     ) -> None:
         """Viewer for the `JobShop` environment.
 
@@ -48,11 +49,13 @@ class JobShopViewer(MatplotlibViewer[JobShopState]):
             render_mode: the mode used to render the environment. Must be one of:
                 - "human": render the environment on screen.
                 - "rgb_array": return a numpy array frame representing the environment.
+            show_critical_path: whether to highlight operations on the critical path.
         """
         self._num_jobs = num_jobs
         self._num_machines = num_machines
         self._max_num_ops = max_num_ops
         self._max_op_duration = max_op_duration
+        self.show_critical_path = show_critical_path
 
         # Have additional color to avoid two jobs having same color when using hsv colormap
         self._cmap = plt.get_cmap(self.COLORMAP_NAME, self._num_jobs + 1)
@@ -127,7 +130,8 @@ class JobShopViewer(MatplotlibViewer[JobShopState]):
     def _prepare_figure(self, ax: plt.Axes) -> None:
         ax.set_xlabel("Time")
         ax.set_ylabel("Machine ID")
-        xlim = self._num_jobs * self._max_num_ops * self._max_op_duration // self._num_machines
+        # xlim = self._num_jobs * self._max_num_ops * self._max_op_duration // self._num_machines
+        xlim = self._num_jobs * self._max_num_ops * self._max_op_duration // self._num_machines * 2
         ax.set_xlim(0, xlim)
         ax.set_ylim(-0.9, self._num_machines)
         ax.xaxis.get_major_locator().set_params(integer=True)
@@ -149,6 +153,13 @@ class JobShopViewer(MatplotlibViewer[JobShopState]):
                 colour = self._cmap(job_id)
                 line_height = 0.8
                 if start_time >= 0:
+                    is_critical = (
+                        self.show_critical_path and state.is_on_critical_path[job_id, op_id]
+                    )
+
+                    # Visual settings based on criticality
+                    colour = "gold" if is_critical else colour
+
                     rectangle = matplotlib.patches.Rectangle(
                         (start_time, machine_id - line_height / 2),
                         width=duration,

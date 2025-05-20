@@ -47,6 +47,9 @@ from jumanji.training.networks.graph_coloring.random import (
 from jumanji.training.networks.job_shop.actor_critic import (
     make_actor_critic_networks_job_shop,
 )
+from jumanji.training.networks.job_shop.improvement.random import (
+    make_random_policy_job_shop_improvement,
+)
 from jumanji.training.networks.job_shop.random import make_random_policy_job_shop
 from jumanji.training.networks.knapsack.actor_critic import (
     make_actor_critic_networks_knapsack,

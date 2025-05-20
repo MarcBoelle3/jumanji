@@ -32,6 +32,7 @@ from jumanji.environments.packing import bin_pack, flat_pack, job_shop, knapsack
 from jumanji.environments.packing.bin_pack.env import BinPack
 from jumanji.environments.packing.flat_pack.env import FlatPack
 from jumanji.environments.packing.job_shop.constructive.env import JobShop
+from jumanji.environments.packing.job_shop.improvement.env import JobShop as JobShopImprovement
 from jumanji.environments.packing.knapsack.env import Knapsack
 from jumanji.environments.packing.tetris.env import Tetris
 from jumanji.environments.routing import (

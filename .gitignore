@@ -155,3 +155,7 @@ jumanji_env/
 **/outputs/
 *.xml
 .sokoban_cache/
+
+#PNG and GIF files
+*.png
+*.gif

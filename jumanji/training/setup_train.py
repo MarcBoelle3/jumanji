@@ -33,6 +33,7 @@ from jumanji.environments import (
     Game2048,
     GraphColoring,
     JobShop,
+    JobShopImprovement,
     Knapsack,
     LevelBasedForaging,
     Maze,
@@ -154,6 +155,11 @@ def _setup_random_policy(cfg: DictConfig, env: Environment) -> RandomPolicy:
     elif cfg.env.name == "job_shop":
         assert isinstance(env.unwrapped, JobShop)
         random_policy = networks.make_random_policy_job_shop()
+    elif cfg.env.name == "job_shop_improvement":
+        assert isinstance(env.unwrapped, JobShopImprovement)
+        random_policy = networks.make_random_policy_job_shop_improvement(
+            job_shop_improvement=env.unwrapped
+        )
     elif cfg.env.name == "cvrp":
         assert isinstance(env.unwrapped, CVRP)
         random_policy = networks.make_random_policy_cvrp()

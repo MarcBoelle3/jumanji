@@ -37,7 +37,7 @@ from jumanji.training.types import TrainingState
 
 
 @hydra.main(config_path="configs", config_name="config.yaml")
-def train(cfg: omegaconf.DictConfig, log_compiles: bool = False) -> None:
+def train(cfg: omegaconf.DictConfig, log_compiles: bool = False) -> None:    
     logging.info(omegaconf.OmegaConf.to_yaml(cfg))
     logging.getLogger().setLevel(logging.INFO)
     logging.info({"devices": jax.local_devices()})
@@ -102,6 +102,13 @@ def train(cfg: omegaconf.DictConfig, log_compiles: bool = False) -> None:
 
             # Training
             with train_timer:
+                # Profile only epoch 2
+                # if i == 2:
+                #     jax.profiler.start_trace("/tmp/tracing-one-epoch")
+                #     training_state, metrics = epoch_fn(training_state)
+                #     jax.block_until_ready((training_state, metrics))
+                #     jax.profiler.stop_trace()
+                # else:
                 training_state, metrics = epoch_fn(training_state)
                 jax.block_until_ready((training_state, metrics))
             logger.write(
