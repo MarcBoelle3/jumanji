@@ -49,6 +49,7 @@ train = [
     "tensorboardX==2.5.1",
     "tqdm>=4.64.1",
     "ray[default]",
+    "s3fs",
 ]
 lint = [
     "coverage",
