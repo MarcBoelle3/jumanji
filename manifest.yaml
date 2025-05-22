@@ -1,33 +1,43 @@
-# yaml-language-server: $schema=https://instadeep.aichor.ai/schema/latest/manifest.schema.json
-
 kind: AIchorManifest
-apiVersion: 0.2.2
-
+apiVersion: 0.2.3
 builder:
-  image: jumanji-img
-  dockerfile: ./Dockerfile
-  context: .
+    buildArgs:
+      ACCELERATOR: "cuda"
+    image: jumanji-img
+    dockerfile: ./Dockerfile
+    context: .
 
 spec:
-  operator: jax
-  image: jumanji-img
-  command: "python examples/train_agent.py"
+    operator: kuberay
+    image: jumanji-img
+    command: >
+        python examples/train_agent.py
 
-  # tensorboard: # optional, disabled by default
-  #   enabled: true
+    debug:
+        # Set to true if you want to run a jupyter notebook:
+        jupyter: false
 
-  types:
-    Worker:
-      count: 2
-      resources:
-        cpus: 16
-        ramRatio: 3
+    securityContext:
+        # Set to true if you want to use py-spy:
+        ptrace: false
 
-        # machineName: "dgx" # optional
-        shmSizeGB: 48 # optional
-
-        accelerators: # optional
-          gpu:
-            count: 1
-            product: Tesla-V100-SXM3-32GB
-            type: gpu
+    types:
+        Head:
+            resources:
+                cpus: 4
+                ramRatio: 30
+                shmSizeGB: 0
+                cpuLimitRatio: 1 # increase to 2 on all pods for performance boost
+                accelerators: # optional
+                    gpu:
+                        count: 1
+                        product: NVIDIA-H100-80GB-HBM3
+                        type: gpu
+        Workers:
+            - name: workers
+              count: 1
+              resources:
+                  cpus: 33
+                  ramRatio: 4
+                  shmSizeGB: 0
+                  cpuLimitRatio: 1 # increase to 2 on all pods for performance boost
