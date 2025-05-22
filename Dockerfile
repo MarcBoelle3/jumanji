@@ -33,7 +33,9 @@ RUN apt update && apt install -y --no-install-recommends git \
     && apt autoremove -y \
     && rm -rf /var/lib/{apt,dpkg,cache,log}
 WORKDIR /
-COPY uv.lock pyproject.toml ./
+#COPY uv.lock pyproject.toml ./
+COPY pyproject.toml ./
+
 # Install lint-specific dependencies only
 # RUN uv sync --locked --no-cache --only-group lint
 RUN uv sync --no-cache --only-group lint
@@ -56,7 +58,8 @@ WORKDIR /app
 # Install main dependencies (not the project to optimise Docker caching)
 # This uses netrc to authenticate with the private packages
 # Setting the HOME variable is needed for uv to find the `.netrc` file
-COPY uv.lock pyproject.toml ./
+#COPY uv.lock pyproject.toml ./
+COPY pyproject.toml ./
 COPY jumanji ./jumanji
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-install-project
