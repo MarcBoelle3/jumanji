@@ -97,6 +97,7 @@ COPY jumanji ./jumanji
 RUN uv sync --no-install-project --all-groups
 COPY . .
 
+
 #################################################################################################
 # Stage: 'gpu_image'
 # GPU-enabled runtime image
