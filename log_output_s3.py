@@ -12,24 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import glob
+import os
 
 from s3fs.core import S3FileSystem
 
 
 def main():
-    # Initialiser S3
+    # Pour Nsight profiling
     s3 = S3FileSystem(client_kwargs={"endpoint_url": os.environ.get("S3_ENDPOINT")})
     output_path = os.environ.get("AICHOR_OUTPUT_PATH")
 
-    # Chercher tous les fichiers .qdstrm dans /tmp/
-    for file_path in glob.glob("/tmp/*.qdstrm"):
-        filename = os.path.basename(file_path)
-        s3_path = os.path.join(output_path, filename)
-
-        print(f"Uploading {file_path} to {s3_path}")
-        s3.put_file(file_path, s3_path)
+    # Chercher tous les fichiers dans /tmp/ qui commencent par "report"
+    for file_path in glob.glob("/tmp/report*"):
+        if os.path.isfile(file_path):
+            filename = os.path.basename(file_path)
+            s3_path = os.path.join(output_path, filename)
+            print(f"Uploading {file_path} to {s3_path}")
+            s3.put_file(file_path, s3_path)
 
 
 if __name__ == "__main__":
