@@ -13,8 +13,8 @@ spec:
   image: jumanji-img
   command: "python examples/train_agent.py"
 
-  tensorboard: # optional, disabled by default
-    enabled: true
+  # tensorboard: # optional, disabled by default
+  #   enabled: true
 
   types:
     Worker:
