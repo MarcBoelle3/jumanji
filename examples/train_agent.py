@@ -18,10 +18,8 @@ import sys
 import warnings
 from pathlib import Path
 
-import jax
-import hydra
 from hydra import compose, initialize
-from omegaconf import DictConfig
+from s3fs.core import S3FileSystem
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).parent.parent)
@@ -49,10 +47,16 @@ def main() -> None:
                 "logger.save_checkpoint=true",
             ],
         )
-        #with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=False):
-        #with jax.profiler.trace("/tmp/jax-trace"):
+        # with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=False):
+        # with jax.profiler.trace("/tmp/jax-trace"):
         train(cfg)
 
 
 if __name__ == "__main__":
-    main() 
+    main()
+
+    # for Nsight profiling
+    s3 = S3FileSystem(client_kwargs={"endpoint_url": os.environ.get("S3_ENDPOINT")})
+    s3.put_file(
+        "/tmp/report.qdstrm", os.path.join(os.environ.get("AICHOR_OUTPUT_PATH"), "report.qdstrm")
+    )
