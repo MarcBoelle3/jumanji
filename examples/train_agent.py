@@ -13,13 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import sys
 import warnings
 from pathlib import Path
 
 from hydra import compose, initialize
-from s3fs.core import S3FileSystem
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).parent.parent)
@@ -54,9 +52,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-    # for Nsight profiling
-    s3 = S3FileSystem(client_kwargs={"endpoint_url": os.environ.get("S3_ENDPOINT")})
-    s3.put_file(
-        "/tmp/report.qdstrm", os.path.join(os.environ.get("AICHOR_OUTPUT_PATH"), "report.qdstrm")
-    )

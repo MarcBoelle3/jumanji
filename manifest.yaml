@@ -12,9 +12,9 @@ spec:
     image: jumanji-img
     # command: >
     #     python examples/train_agent.py
-    command: "nsys profile \
-     -f true --output=/tmp/report.qdstrm \
-     python examples/train_agent.py"
+    command: >
+        bash -c "nsys profile -f true --output=/tmp/report.qdstrm python examples/train_agent.py \
+        && python log_output_s3.py"
 
     debug:
         # Set to true if you want to run a jupyter notebook:
