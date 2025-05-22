@@ -29,7 +29,7 @@ COPY pyproject.toml ./
 COPY jumanji ./jumanji
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --all-groups --extra gpu
+    uv sync --no-install-project --group reqs --group train --extra gpu
 
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/nvvm /usr/local/cuda/nvvm

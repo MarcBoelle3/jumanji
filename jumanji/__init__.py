@@ -152,4 +152,4 @@ register(id="LevelBasedForaging-v0", entry_point="jumanji.environments:LevelBase
 ###
 
 # Search-and-Rescue environment
-register(id="SearchAndRescue-v0", entry_point="jumanji.environments:SearchAndRescue")
+# register(id="SearchAndRescue-v0", entry_point="jumanji.environments:SearchAndRescue")

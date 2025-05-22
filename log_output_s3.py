@@ -23,8 +23,9 @@ def main():
     s3 = S3FileSystem(client_kwargs={"endpoint_url": os.environ.get("S3_ENDPOINT")})
     output_path = os.environ.get("AICHOR_OUTPUT_PATH")
 
-    # Chercher tous les fichiers dans /tmp/ qui commencent par "report"
-    for file_path in glob.glob("/tmp/report*"):
+    # Chercher tous les fichiers dans /app/ qui commencent par "report"
+    for file_path in glob.glob("/app/report*"):
+        print("file_path: ", file_path)
         if os.path.isfile(file_path):
             filename = os.path.basename(file_path)
             s3_path = os.path.join(output_path, filename)
@@ -34,3 +35,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    print("done")
