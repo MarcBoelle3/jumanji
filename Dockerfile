@@ -20,10 +20,6 @@ ENV UV_PYTHON=python${PYTHON_VERSION} \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-############################################################################################
-# Stage: 'base_image'
-# Installs core Python dependencies globally
-FROM python_base AS base_image
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential cmake && \
@@ -31,20 +27,10 @@ RUN apt-get update && \
 WORKDIR /app
 COPY pyproject.toml ./
 COPY jumanji ./jumanji
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project
 
-#############################################################################################
-# Stage: 'base_image_with_extras'
-# Installs all optional groups globally
-FROM base_image AS base_image_with_extras
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --all-groups
+    uv sync --no-install-project --all-groups --extra gpu
 
-#################################################################################################
-# Stage: 'gpu_image'
-# GPU-enabled runtime image
-FROM base_image_with_extras AS gpu_image
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/nvvm /usr/local/cuda/nvvm
 
