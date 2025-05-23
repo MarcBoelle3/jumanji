@@ -10,14 +10,14 @@ network:
     transformer_mlp_units: [512]
 
 training:
-    num_epochs: 4
-    num_learner_steps_per_epoch: 200
-    n_steps: 10
-    total_batch_size: 128
+    num_epochs: 8
+    num_learner_steps_per_epoch: 3
+    n_steps: 2
+    total_batch_size: 2
 
 evaluation:
-    eval_total_batch_size: 512
-    greedy_eval_total_batch_size: 512
+    eval_total_batch_size: 2
+    greedy_eval_total_batch_size: 2
 
 a2c:
     normalize_advantage: False
