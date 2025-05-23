@@ -13,7 +13,7 @@ spec:
     # command: >
     #     python examples/train_agent.py
     command: >
-        bash -c "nsys profile -f true --capture-range=cudaProfilerApi --cuda-graph-trace=node --capture-range-end=stop python examples/train_agent.py && python log_output_s3.py"
+        bash -c "nsys profile -f true --cuda-graph-trace=node python examples/train_agent.py && python log_output_s3.py"
 
 
     debug:

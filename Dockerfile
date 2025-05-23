@@ -23,12 +23,6 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential cmake && \
     rm -rf /var/lib/{apt,dpkg,cache,log}
-WORKDIR /app
-COPY pyproject.toml ./
-COPY jumanji ./jumanji
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --group reqs --group train
 
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/nvvm /usr/local/cuda/nvvm
@@ -41,6 +35,9 @@ RUN apt-get update && apt install -y wget libglib2.0-0
 RUN wget ${NSYS_URL}${NSYS_PKG} && dpkg -i $NSYS_PKG && rm $NSYS_PKG
 
 WORKDIR /app
+COPY pyproject.toml ./
+COPY jumanji ./jumanji
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --group reqs --group train --extra gpu --no-install-project
+
 COPY . .
-RUN mkdir -p /root/.cache/uv
-RUN uv sync --extra gpu
