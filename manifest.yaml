@@ -10,10 +10,10 @@ builder:
 spec:
     operator: kuberay
     image: jumanji-img
-    command: >
-        python examples/train_agent.py
     # command: >
-    #     bash -c "nsys profile -f true --cuda-graph-trace=node python examples/train_agent.py && python log_output_s3.py"
+    #     python examples/train_agent.py
+    command: >
+        bash -c "nsys profile -f true --cuda-graph-trace=node python examples/train_agent.py && python log_output_s3.py"
 
 
     debug:
@@ -33,11 +33,6 @@ spec:
                 ramRatio: 30
                 shmSizeGB: 0
                 cpuLimitRatio: 1 # increase to 2 on all pods for performance boost
-                accelerators: # optional
-                    gpu:
-                        count: 1
-                        product: NVIDIA-H100-80GB-HBM3
-                        type: gpu
         Workers:
             - name: workers
               count: 1
@@ -46,3 +41,8 @@ spec:
                   ramRatio: 4
                   shmSizeGB: 0
                   cpuLimitRatio: 1 # increase to 2 on all pods for performance boost
+                  accelerators:
+                            gpu:
+                                count: 1
+                                product: NVIDIA-H100-80GB-HBM3
+                                type: gpu
