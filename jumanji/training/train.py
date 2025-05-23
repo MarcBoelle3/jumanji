@@ -116,8 +116,7 @@ def train(cfg: omegaconf.DictConfig, log_compiles: bool = False) -> None:
                     libcudart.cudaProfilerStart()
                 training_state, metrics = epoch_fn(training_state)
                 jax.block_until_ready((training_state, metrics))
-                if i == 2:
-                    libcudart.cudaProfilerStop()
+            libcudart.cudaProfilerStop()
             logger.write(
                 data=utils.first_from_device(metrics),
                 label="train",

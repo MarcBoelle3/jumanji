@@ -13,7 +13,6 @@ FROM python:${PYTHON_VERSION} AS python_base
 COPY --from=uv_base /uv /bin/
 ENV UV_PROJECT_ENVIRONMENT="/usr/local/"
 ENV UV_PYTHON=python${PYTHON_VERSION} \
-    UV_NO_CACHE=1 \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
