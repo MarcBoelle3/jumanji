@@ -33,16 +33,16 @@ spec:
                 ramRatio: 30
                 shmSizeGB: 0
                 cpuLimitRatio: 1 # increase to 2 on all pods for performance boost
+                # accelerators: # optional
+                #     gpu:
+                #         count: 1
+                #         product: NVIDIA-H100-80GB-HBM3
+                #         type: gpu
         Workers:
             - name: workers
-              count: 1
+              count: 10
               resources:
                   cpus: 33
                   ramRatio: 4
                   shmSizeGB: 0
                   cpuLimitRatio: 1 # increase to 2 on all pods for performance boost
-                  accelerators:
-                            gpu:
-                                count: 1
-                                product: NVIDIA-H100-80GB-HBM3
-                                type: gpu
