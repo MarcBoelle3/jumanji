@@ -17,7 +17,10 @@ import sys
 import warnings
 from pathlib import Path
 
+import jax
 from hydra import compose, initialize
+
+jax.config.update("jax_traceback_in_locations_limit", -1)
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).parent.parent)

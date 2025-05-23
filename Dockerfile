@@ -29,7 +29,7 @@ COPY pyproject.toml ./
 COPY jumanji ./jumanji
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --group reqs --group train --extra gpu
+    uv sync --no-install-project --group reqs --group train
 
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
 COPY --from=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 /usr/local/cuda/nvvm /usr/local/cuda/nvvm
@@ -43,4 +43,5 @@ RUN wget ${NSYS_URL}${NSYS_PKG} && dpkg -i $NSYS_PKG && rm $NSYS_PKG
 
 WORKDIR /app
 COPY . .
-RUN uv sync
+RUN mkdir -p /root/.cache/uv
+RUN uv sync --extra gpu

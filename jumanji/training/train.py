@@ -14,6 +14,7 @@
 
 import functools
 import logging
+from ctypes import cdll
 from typing import Dict, Tuple
 
 import hydra
@@ -35,9 +36,11 @@ from jumanji.training.setup_train import (
 from jumanji.training.timer import Timer
 from jumanji.training.types import TrainingState
 
+libcudart = cdll.LoadLibrary("libcudart.so")
+
 
 @hydra.main(config_path="configs", config_name="config.yaml")
-def train(cfg: omegaconf.DictConfig, log_compiles: bool = False) -> None:    
+def train(cfg: omegaconf.DictConfig, log_compiles: bool = False) -> None:
     logging.info(omegaconf.OmegaConf.to_yaml(cfg))
     logging.getLogger().setLevel(logging.INFO)
     logging.info({"devices": jax.local_devices()})
@@ -109,8 +112,12 @@ def train(cfg: omegaconf.DictConfig, log_compiles: bool = False) -> None:
                 #     jax.block_until_ready((training_state, metrics))
                 #     jax.profiler.stop_trace()
                 # else:
+                if i == 2:
+                    libcudart.cudaProfilerStart()
                 training_state, metrics = epoch_fn(training_state)
                 jax.block_until_ready((training_state, metrics))
+                if i == 2:
+                    libcudart.cudaProfilerStop()
             logger.write(
                 data=utils.first_from_device(metrics),
                 label="train",
