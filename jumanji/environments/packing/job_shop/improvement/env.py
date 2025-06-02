@@ -179,11 +179,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
     @cached_property
     def action_spec(self) -> specs.MultiDiscreteArray:
         """Specifications of the action in the `JobShopImprovement` environment.
-        The action gives a tuple (start, end, move_start_end), where (start, end) is a pair of operations to be switched
-        and move_start_end is a direction of the move. The direction (0, 1) indicates the direction of the move:
+        The action gives a tuple (action_idx, left_or_right), where action_idx is the index of the operation to be switched
+        and left_or_right is a direction of the move.  For left_or_right:
         - 0: start stays at its position and end moves before it.
         - 1: end stays at its position and start moves after it.
-        The direction is dummy for N5 neighborhood, as it gives the same result,
+        The direction is dummy for N5 neighborhood, as it gives the same result after masking,
         but required for N6 neighborhood as it distinguishes between the two possible moves.
 
         Returns:
