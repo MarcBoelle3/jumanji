@@ -113,13 +113,13 @@ class JobShop(Environment[ConstructiveState, specs.MultiDiscreteArray, Observati
             viewer: `Viewer` used for rendering. Defaults to `JobShopViewer`.
         """
         self.scenario_generator = scenario_generator or RandomScenarioGenerator(
-            max_num_jobs=20,
+            max_num_jobs=3,
             max_num_ops=8,
             max_op_duration=6,
         )
         self.schedule_generator = schedule_generator or EmptyScheduleGenerator(
-            num_jobs=20,
-            num_machines=10,
+            num_jobs=3,
+            num_machines=3,
             max_num_ops=8,
         )
         self.num_jobs = self.schedule_generator.num_jobs
