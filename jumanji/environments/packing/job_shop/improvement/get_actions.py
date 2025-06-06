@@ -260,7 +260,7 @@ def select_operations_to_switch(
     to switch has to be in the order start < end in the schedule.
 
     Args:
-        critical_block_info: array of critical block information, shape (num_ops_total, 6)
+        critical_block_info: array of critical block information, shape (num_ops_total, 8)
         chosen_action: array of chosen action, shape (2,) and contains:
         - chosen_op_idx: index of the chosen operation
         - chosen_left_or_right: 0 to move the operation left, 1 to move it right
@@ -294,3 +294,39 @@ def select_operations_to_switch(
             [chosen_op_idx, neighbor_idx, 1]
         ),  # 1 = end stays at its position and start moves after it
     )
+
+def fully_convert_to_operation_pairs_N5(
+    critical_block_info: chex.Array,
+    action_mask: chex.Array
+    ) -> chex.Array:
+    num_ops_total = critical_block_info.shape[0]
+
+    #il faut que je sélectionne les opérations qui ont leur action_mask à true,
+    #et pour celle là je récupère leur index et leur voisin
+
+    is_move_left_valid = action_mask[:, 0]
+    is_move_right_valid = action_mask[:, 1]
+
+    #for now, N5 only 
+    left_neighbor_idx = critical_block_info[:, CBFields.LEFT_NEIGHBOR]
+    right_neighbor_idx = critical_block_info[:, CBFields.RIGHT_NEIGHBOR]
+    op_idx = jnp.arange(num_ops_total)
+
+    #for is_move_left_valid, we want to set the pair (left_neighbor, operation) to True
+    #for is_move_right_valid, we want to set the pair (operation, right_neighbor) to True
+    operation_pairs_mask = jnp.zeros((num_ops_total, num_ops_total), dtype=bool)
+
+    # Filter non-valid operations pairs
+    #invariant: when replaced by 0, the position in all_mask will be 0 so nothing is changed
+    left_src = jnp.where(is_move_left_valid, left_neighbor_idx, 0)
+    left_dst = jnp.where(is_move_left_valid, op_idx, 0)
+    right_src = jnp.where(is_move_right_valid, op_idx, 0)
+    right_dst = jnp.where(is_move_right_valid, right_neighbor_idx, 0)
+
+    all_rows = jnp.concatenate([left_src, right_src])
+    all_cols = jnp.concatenate([left_dst, right_dst])
+    all_mask = jnp.concatenate([is_move_left_valid, is_move_right_valid])
+
+    operation_pairs_mask = operation_pairs_mask.at[all_rows, all_cols].set(all_mask)
+
+    return operation_pairs_mask

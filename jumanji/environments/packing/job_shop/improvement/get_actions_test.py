@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import IntEnum
 from typing import Tuple
 
 import chex
@@ -25,11 +26,23 @@ from jumanji.environments.packing.job_shop.improvement.compute_makespan import (
 from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_action_mask_n5,
     get_critical_operations,
+    fully_convert_to_operation_pairs_N5,
 )
 
 # Hardcoded max number of edges for the example matrices
 MAX_NUM_EDGES = 50
 
+class CBFields(IntEnum):
+    """Fields of the critical block information array."""
+
+    IS_ON_CRITICAL_PATH = 0  # 1 if the operation is on the critical path, 0 otherwise
+    BLOCK_ID = 1  # the number of the critical block the operation belongs to
+    IS_LEFT = 2  # 1 if the operation is a left operation of a critical block, 0 otherwise
+    IS_RIGHT = 3  # 1 if the operation is a right operation of a critical block, 0 otherwise
+    LEFT_NEIGHBOR = 4  # the left neighbor of the operation
+    RIGHT_NEIGHBOR = 5  # the right neighbor of the operation
+    LEFT_END = 6  # operation index of the left end of the critical block
+    RIGHT_END = 7  # operation index of the right end of the critical block
 
 class TestGetCriticalOperations:
     @pytest.fixture
@@ -236,3 +249,68 @@ class TestGetCriticalOperations:
         action_mask2 = get_action_mask_n5(critical_ops, max_num_ops)
 
         assert jnp.all(action_mask == action_mask2)
+
+
+    def test_fully_convert_to_operation_pairs(
+        self, matrices_example: Tuple[chex.Array, chex.Array, chex.Array]
+    ) -> None:
+        """Test that fully_convert_to_operation_pairs works correctly."""
+        ops_durations, adj_mat_pc, adj_mat_mc = matrices_example
+        max_num_jobs, max_num_ops = ops_durations.shape
+
+        # Get critical operations
+        adj_mat = jnp.maximum(adj_mat_pc, adj_mat_mc)
+        est, lst, _ = compute_est_lst_makespan(adj_mat, ops_durations, MAX_NUM_EDGES)
+        critical_ops = get_critical_operations(
+            est, lst, adj_mat_mc, ops_durations, max_num_jobs, max_num_ops, MAX_NUM_EDGES
+        )
+
+        action_mask = get_action_mask_n5(critical_ops, max_num_ops)
+        action_mask.at[0, 0]
+        # Test N5 neighborhood
+        operation_pairs_mask = fully_convert_to_operation_pairs_N5(
+            critical_ops, action_mask
+        )
+
+        # Verify shape
+        expected_shape = (max_num_jobs * max_num_ops, max_num_jobs * max_num_ops)
+        assert operation_pairs_mask.shape == expected_shape
+
+        # Verify it's a boolean mask
+        assert operation_pairs_mask.dtype == jnp.bool_
+
+        # Check that only expected pairs are marked as True
+        # For operation 1 moving left, it should pair with its left neighbor
+        # For operation 5 moving right, it should pair with its right neighbor
+        right_neighbor_1 = critical_ops[1, CBFields.RIGHT_NEIGHBOR]
+        left_neighbor_5 = critical_ops[5, CBFields.LEFT_NEIGHBOR]
+
+        # Verify the correct pairs are set to True
+        assert operation_pairs_mask[1, right_neighbor_1] == True  # left neighbor before op 1
+        assert operation_pairs_mask[left_neighbor_5, 5] == True  # op 5 before right neighbor
+
+        # Count total True values (should be 2 for our test case)
+        assert jnp.sum(operation_pairs_mask) == 2
+
+    def test_fully_convert_to_operation_pairs_jit(
+        self, matrices_example: Tuple[chex.Array, chex.Array, chex.Array]
+    ) -> None:
+        """Test that fully_convert_to_operation_pairs is jit-able and only compiles once."""
+        ops_durations, adj_mat_pc, adj_mat_mc = matrices_example
+        max_num_jobs, max_num_ops = ops_durations.shape
+
+        # Get critical operations
+        adj_mat = jnp.maximum(adj_mat_pc, adj_mat_mc)
+        est, lst, _ = compute_est_lst_makespan(adj_mat, ops_durations, MAX_NUM_EDGES)
+        critical_ops = get_critical_operations(
+            est, lst, adj_mat_mc, ops_durations, max_num_jobs, max_num_ops, MAX_NUM_EDGES
+        )
+
+        action_mask = get_action_mask_n5(critical_ops, max_num_ops)
+
+        call_fn = jax.jit(chex.assert_max_traces(fully_convert_to_operation_pairs_N5, n=1))
+
+        operation_pairs_mask = call_fn(critical_ops, action_mask)
+        operation_pairs_mask2 = call_fn(critical_ops, action_mask)
+
+        assert jnp.all(operation_pairs_mask == operation_pairs_mask2)

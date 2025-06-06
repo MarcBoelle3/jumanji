@@ -33,6 +33,7 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_action_mask_n5,
     get_critical_operations,
     select_operations_to_switch,
+    fully_convert_to_operation_pairs_N5
 )
 from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Observation
 from jumanji.environments.packing.job_shop.improvement.update_sol import update_disjunctive_graph
@@ -138,42 +139,47 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             maximum=self.max_op_duration,
             name="ops_durations",
         )
-        adj_mat_pc = specs.Array(
-            shape=(
-                self.max_num_jobs * self.max_num_ops + 2,
-                self.max_num_jobs * self.max_num_ops + 2,
-            ),
+        edges_pc = specs.Array(
+            shape=(self.max_num_edges, 2),
             dtype=jnp.int32,
-            name="adj_mat_pc",
+            name="edges_pc",
         )
-        adj_mat_mc = specs.Array(
-            shape=(
-                self.max_num_jobs * self.max_num_ops + 2,
-                self.max_num_jobs * self.max_num_ops + 2,
-            ),
+        edges_mc = specs.Array(
+            shape=(self.max_num_edges, 2),
             dtype=jnp.int32,
-            name="adj_mat_mc",
+            name="edges_mc",
         )
         makespan = specs.Array(
             shape=(),
             dtype=jnp.float32,
             name="makespan",
         )
-
         action_mask = specs.Array(
             shape=(self.max_num_ops * self.max_num_jobs, 2),
             dtype=bool,
             name="action_mask",
+        )
+        observation_features = specs.Array(
+            shape=(self.max_num_jobs * self.max_num_ops, 3),
+            dtype=jnp.int32,
+            name="observation_features",
+        )
+        operation_pairs_mask = specs.Array(
+            shape=(self.max_num_ops * self.max_num_jobs, self.max_num_ops * self.max_num_jobs),
+            dtype=jnp.bool_,
+            name="operation_pairs_mask",
         )
         return specs.Spec(
             constructor=Observation,
             name="ObservationSpec",
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
-            adj_mat_pc=adj_mat_pc,
-            adj_mat_mc=adj_mat_mc,
+            edges_pc=edges_pc,
+            edges_mc=edges_mc,
             makespan=makespan,
             action_mask=action_mask,
+            observation_features=observation_features,
+            operation_pairs_mask=operation_pairs_mask,
         )
 
     @cached_property
@@ -273,6 +279,9 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         # Check if there are any valid actions in the action mask
         has_valid_actions = jnp.any(action_mask)
 
+        #New! for masking operation pairs:
+        operation_pairs_mask = fully_convert_to_operation_pairs_N5(critical_block_info, action_mask)
+
         # Create new state
         new_state = ImprovementState(
             ops_machine_ids=state.ops_machine_ids,
@@ -285,12 +294,13 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             makespan=makespan,
             is_on_critical_path=is_on_critical_path,
             action_mask=action_mask,
+            operation_pairs_mask=operation_pairs_mask,
             critical_block_info=critical_block_info,
             key=state.key,
         )
 
         # Create observation
-        next_obs = self._observation_from_state(new_state)
+        next_obs = self._observation_from_state(new_state, est, lst)
 
         done = state.step_count >= self.time_limit
 
@@ -340,7 +350,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         action_mask = get_action_mask_n5(critical_block_info, self.max_num_ops)
         return action_mask, critical_block_info
 
-    def _observation_from_state(self, state: ImprovementState) -> Observation:
+    def _observation_from_state(self, state: ImprovementState, est: chex.Array, lst: chex.Array) -> Observation:
         """Converts a job shop environment state to an observation.
 
         Args:
@@ -350,11 +360,29 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             observation: `Observation` object containing the observation of the environment.
         """
 
+        adj_mat_mc = state.adj_mat_mc
+        adj_mat_pc = state.adj_mat_pc
+
+        senders_mc, receivers_mc = jnp.nonzero(adj_mat_mc > 0, size=self.max_num_edges, fill_value=-1)
+        senders_pc, receivers_pc = jnp.nonzero(adj_mat_pc > 0, size=self.max_num_edges, fill_value=-1)
+        edges_mc = jnp.concatenate([senders_mc, receivers_mc], axis=0)
+        edges_pc = jnp.concatenate([senders_pc, receivers_pc], axis=0)
+
+
+        #add original paper observation features: ops_duration, est and lst for each operation
+        observation_features = jnp.concatenate([
+            state.ops_durations.reshape(-1),
+            est[1:-1],
+            lst[1:-1],
+        ], axis=0)
+
         return Observation(
             ops_machine_ids=state.ops_machine_ids,
             ops_durations=state.ops_durations,
-            adj_mat_pc=state.adj_mat_pc,
-            adj_mat_mc=state.adj_mat_mc,
+            edges_pc=edges_pc,
+            edges_mc=edges_mc,
             makespan=state.makespan,
             action_mask=state.action_mask,
+            operation_pairs_mask=state.operation_pairs_mask,
+            observation_features=observation_features,
         )
