@@ -25,6 +25,7 @@ from jumanji.environments.packing.job_shop.improvement.compute_makespan import (
 from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_action_mask_n5,
     get_critical_operations,
+    fully_convert_to_operation_pairs_N5
 )
 from jumanji.environments.packing.job_shop.improvement.types import ImprovementState
 from jumanji.environments.packing.job_shop.types import Scenario
@@ -186,7 +187,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
             est, lst, adj_mat_mc, ops_durations, self.max_num_jobs, self.max_num_ops, max_num_edges
         )
         action_mask = get_action_mask_n5(critical_block_info, self.max_num_ops)
-
+        operation_pairs_mask = fully_convert_to_operation_pairs_N5(critical_block_info=critical_block_info, action_mask=action_mask)
         # Time starts at 0
         step_count = jnp.array(0, jnp.int32)
 
@@ -203,6 +204,9 @@ class RandomScheduleGenerator(ScheduleGenerator):
             key=key,
             action_mask=action_mask,
             critical_block_info=critical_block_info,
+            est=est,
+            lst=lst,
+            operation_pairs_mask=operation_pairs_mask,
         )
 
         return state

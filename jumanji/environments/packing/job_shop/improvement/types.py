@@ -37,16 +37,22 @@ class Observation(NamedTuple):
 
     ops_machine_ids: chex.Array  # (num_jobs, max_num_ops)
     ops_durations: chex.Array  # (num_jobs, max_num_ops)
-    adj_mat_pc: (
-        chex.Array
-    )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
-    adj_mat_mc: (
-        chex.Array
-    )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
+    edges_pc: chex.Array  # (max_num_edges, 2)
+    edges_mc: chex.Array  # (max_num_edges, 2)
     makespan: chex.Numeric  # ()
     action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
+    observation_features: chex.Array  # (max_num_jobs * max_num_ops, 3)
+    operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
 
-
+    @property
+    def agent_view(self) -> dict:
+        return {
+            "observation_features": self.observation_features,
+            "edges_pc": self.edges_pc,
+            "edges_mc": self.edges_mc,
+            "action_mask": self.action_mask,
+            "operation_pairs_mask": self.operation_pairs_mask,
+        }
 @dataclass
 class ImprovementState(JobShopState):
     """The environment state containing a valid schedule for a given scenario.
@@ -70,3 +76,6 @@ class ImprovementState(JobShopState):
     is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
     action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
     critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 10)
+    est: chex.Array  # (max_num_jobs * max_num_ops,)
+    lst: chex.Array  # (max_num_jobs * max_num_ops,)
+    operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)

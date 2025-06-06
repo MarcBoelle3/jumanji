@@ -296,11 +296,13 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             action_mask=action_mask,
             operation_pairs_mask=operation_pairs_mask,
             critical_block_info=critical_block_info,
+            est=est,
+            lst=lst,
             key=state.key,
         )
 
         # Create observation
-        next_obs = self._observation_from_state(new_state, est, lst)
+        next_obs = self._observation_from_state(new_state)
 
         done = state.step_count >= self.time_limit
 
@@ -350,7 +352,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         action_mask = get_action_mask_n5(critical_block_info, self.max_num_ops)
         return action_mask, critical_block_info
 
-    def _observation_from_state(self, state: ImprovementState, est: chex.Array, lst: chex.Array) -> Observation:
+    def _observation_from_state(self, state: ImprovementState) -> Observation:
         """Converts a job shop environment state to an observation.
 
         Args:
@@ -365,16 +367,15 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         senders_mc, receivers_mc = jnp.nonzero(adj_mat_mc > 0, size=self.max_num_edges, fill_value=-1)
         senders_pc, receivers_pc = jnp.nonzero(adj_mat_pc > 0, size=self.max_num_edges, fill_value=-1)
-        edges_mc = jnp.concatenate([senders_mc, receivers_mc], axis=0)
-        edges_pc = jnp.concatenate([senders_pc, receivers_pc], axis=0)
-
+        edges_mc = jnp.stack([senders_mc, receivers_mc], axis=-1)  # shape (num_edges, 2)
+        edges_pc = jnp.stack([senders_pc, receivers_pc], axis=-1)  # shape (num_edges, 2)
 
         #add original paper observation features: ops_duration, est and lst for each operation
-        observation_features = jnp.concatenate([
+        observation_features = jnp.stack([
             state.ops_durations.reshape(-1),
-            est[1:-1],
-            lst[1:-1],
-        ], axis=0)
+            state.est[1:-1],
+            state.lst[1:-1],
+        ], axis=-1) #shape (max_num_ops*max_num_jobs, 3)
 
         return Observation(
             ops_machine_ids=state.ops_machine_ids,
