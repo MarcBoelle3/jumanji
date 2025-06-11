@@ -372,9 +372,9 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         #add original paper observation features: ops_duration, est and lst for each operation
         observation_features = jnp.stack([
-            state.ops_durations.reshape(-1),
-            state.est[1:-1],
-            state.lst[1:-1],
+            jnp.pad(state.ops_durations.reshape(-1), (1, 1), mode='constant', constant_values=0),
+            state.est,
+            state.lst,
         ], axis=-1) #shape (max_num_ops*max_num_jobs, 3)
 
         #Where ops_durations is -1, mask to zero
