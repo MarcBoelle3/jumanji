@@ -160,7 +160,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             name="action_mask",
         )
         observation_features = specs.Array(
-            shape=(self.max_num_jobs * self.max_num_ops, 3),
+            shape=(self.max_num_jobs * self.max_num_ops + 2, 3),
             dtype=jnp.int32,
             name="observation_features",
         )
