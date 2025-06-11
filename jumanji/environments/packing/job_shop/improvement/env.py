@@ -59,7 +59,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         scenario_generator: Optional[ScenarioGenerator] = None,
         schedule_generator: Optional[ScheduleGenerator] = None,
         viewer: Optional[Viewer[ImprovementState]] = None,
-        time_limit: int = 100,
+        time_limit: int = 500,
     ):
         """Initialize the Job Shop Improvement environment.
 
@@ -71,11 +71,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         self.scenario_generator = scenario_generator or RandomScenarioGenerator(
             max_num_jobs=20,
-            max_num_ops=8,
+            max_num_ops=10,
             max_op_duration=6,
         )
         self.schedule_generator = schedule_generator or RandomScheduleGenerator(
-            num_jobs=20, num_machines=10, max_num_ops=8, max_num_jobs=20
+            num_jobs=20, num_machines=10, max_num_ops=10, max_num_jobs=20
         )
 
         # Initialize static parameters
@@ -214,8 +214,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         # Generate a new problem instance
         scenario = self.scenario_generator(key, self.num_jobs, self.num_machines)
         state = self.schedule_generator(
-            scenario.key, scenario, method_id=0
-        )  # for now, method is plist
+            scenario.key, scenario, method_id=2
+        )  # for now, method is fdd/mwr
 
         obs = self._observation_from_state(state)
         timestep = restart(observation=obs)
