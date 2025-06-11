@@ -382,8 +382,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         #Normalize observation features: divide duration by 99, est and lst by 1000, as in the paper
 
-        observation_features = observation_features.at[:, :, 0].divide(99.0)
-        observation_features = observation_features.at[:, :, 1:].divide(1000.0)
+        observation_features = observation_features.at[:, 0].divide(99.0)
+        observation_features = observation_features.at[:, 1:].divide(1000.0)
 
         return Observation(
             ops_machine_ids=state.ops_machine_ids,
