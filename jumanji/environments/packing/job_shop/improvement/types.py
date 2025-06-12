@@ -62,6 +62,7 @@ class ImprovementState(JobShopState):
     adj_mat_pc: adjacency matrix of the precedence constraints graph.
     adj_mat_mc: adjacency matrix of the machine constraints graph. Updated at each step.
     makespan: the current makespan of the state.
+    incumbent_makespan: the smallest makespan found so far in the episode.
     is_on_critical_path: for each job, it specifies whether each operation is on the critical path.
     """
 
@@ -73,6 +74,7 @@ class ImprovementState(JobShopState):
         chex.Array
     )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
     makespan: chex.Numeric  # ()
+    incumbent_makespan: chex.Numeric  # ()
     is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
     action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
     critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 10)
