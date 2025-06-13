@@ -273,6 +273,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         # Compute reward
         reward = jnp.maximum(state.incumbent_makespan - makespan, 0)
         incumbent_makespan = jnp.minimum(state.incumbent_makespan, makespan)
+        step_minimum = jnp.where(
+            makespan < state.incumbent_makespan,
+            state.step_count + 1,
+            state.step_minimum,
+        )
         # reward = state.makespan - makespan
 
         action_mask, critical_block_info = self._create_action_mask(
@@ -295,6 +300,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             adj_mat_mc=new_adj_mat_mc,
             makespan=makespan,
             incumbent_makespan=incumbent_makespan,
+            step_minimum=step_minimum,
             is_on_critical_path=is_on_critical_path,
             action_mask=action_mask,
             operation_pairs_mask=operation_pairs_mask,

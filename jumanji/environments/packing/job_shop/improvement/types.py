@@ -75,6 +75,7 @@ class ImprovementState(JobShopState):
     )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
     makespan: chex.Numeric  # ()
     incumbent_makespan: chex.Numeric  # ()
+    step_minimum: chex.Numeric  # ()
     is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
     action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
     critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 10)

@@ -201,6 +201,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
             adj_mat_mc=adj_mat_mc,
             makespan=makespan,
             incumbent_makespan=makespan,
+            step_minimum=step_count,
             is_on_critical_path=is_on_critical_path,
             key=key,
             action_mask=action_mask,
