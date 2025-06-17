@@ -82,8 +82,9 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         self.max_num_jobs = self.scenario_generator.max_num_jobs
         self.max_op_duration = self.scenario_generator.max_op_duration
         self.max_num_ops = self.scenario_generator.max_num_ops
-        self.max_num_edges = (1 + 2 * self.max_num_ops) * self.max_num_jobs
-
+        self.max_num_edges_mc = self.max_num_ops * self.max_num_jobs #upper bound
+        self.max_num_edges_pc = self.max_num_jobs * (self.max_num_ops +1)
+        self.max_num_edges = self.max_num_edges_mc + self.max_num_edges_pc
         # Initialize dynamic parameters
         self.num_jobs = self.schedule_generator.num_jobs
         self.num_machines = self.schedule_generator.num_machines
@@ -140,12 +141,12 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             name="ops_durations",
         )
         edges_pc = specs.Array(
-            shape=(self.max_num_edges, 2),
+            shape=(self.max_num_edges_pc, 2),
             dtype=jnp.int32,
             name="edges_pc",
         )
         edges_mc = specs.Array(
-            shape=(self.max_num_edges, 2),
+            shape=(self.max_num_edges_mc, 2),
             dtype=jnp.int32,
             name="edges_mc",
         )
@@ -153,6 +154,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             shape=(),
             dtype=jnp.float32,
             name="makespan",
+        )
+        incumbent_makespan = specs.Array(
+            shape=(),
+            dtype=jnp.float32,
+            name="incumbent_makespan",
         )
         action_mask = specs.Array(
             shape=(self.max_num_ops * self.max_num_jobs, 2),
@@ -177,6 +183,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             edges_pc=edges_pc,
             edges_mc=edges_mc,
             makespan=makespan,
+            incumbent_makespan=incumbent_makespan,
             action_mask=action_mask,
             observation_features=observation_features,
             operation_pairs_mask=operation_pairs_mask,
@@ -374,8 +381,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         adj_mat_mc = state.adj_mat_mc
         adj_mat_pc = state.adj_mat_pc
 
-        senders_mc, receivers_mc = jnp.nonzero(adj_mat_mc > 0, size=self.max_num_edges, fill_value=-1)
-        senders_pc, receivers_pc = jnp.nonzero(adj_mat_pc > 0, size=self.max_num_edges, fill_value=-1)
+        senders_mc, receivers_mc = jnp.nonzero(adj_mat_mc > 0, size=self.max_num_edges_mc, fill_value=-1)
+        senders_pc, receivers_pc = jnp.nonzero(adj_mat_pc > 0, size=self.max_num_edges_pc, fill_value=-1)
         edges_mc = jnp.stack([senders_mc, receivers_mc], axis=-1)  # shape (num_edges, 2)
         edges_pc = jnp.stack([senders_pc, receivers_pc], axis=-1)  # shape (num_edges, 2)
 
@@ -400,6 +407,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             edges_pc=edges_pc,
             edges_mc=edges_mc,
             makespan=state.makespan,
+            incumbent_makespan=state.incumbent_makespan,
             action_mask=state.action_mask,
             operation_pairs_mask=state.operation_pairs_mask,
             observation_features=observation_features,

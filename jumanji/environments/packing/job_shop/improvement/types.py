@@ -40,6 +40,7 @@ class Observation(NamedTuple):
     edges_pc: chex.Array  # (max_num_edges, 2)
     edges_mc: chex.Array  # (max_num_edges, 2)
     makespan: chex.Numeric  # ()
+    incumbent_makespan: chex.Numeric  # ()
     action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
     observation_features: chex.Array  # (max_num_jobs * max_num_ops, 3)
     operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
@@ -52,6 +53,8 @@ class Observation(NamedTuple):
             "edges_mc": self.edges_mc,
             "action_mask": self.action_mask,
             "operation_pairs_mask": self.operation_pairs_mask,
+            "makespan": self.makespan,
+            "incumbent_makespan": self.incumbent_makespan,
         }
 @dataclass
 class ImprovementState(JobShopState):
