@@ -232,67 +232,24 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
     def step(
         self, state: ImprovementState, action: chex.Array
     ) -> Tuple[ImprovementState, TimeStep[Observation]]:
-        """Conditionally updates the environment state.
+        """Updates the environment state by applying the given action and computing the new makespan.
 
-        This function first checks if the state is already terminal (either by reaching
-        the time limit or having no valid actions). If it is terminal, the function
-        acts as a no-op, returning the original state. Otherwise, it applies the
-        given action to compute a new state and timestep.
-
-        Args:
-            state: The current environment state.
-            action: The action to apply to the state.
-
-        Returns:
-            A tuple containing the new environment state and the corresponding timestep.
-        """
-        no_valid_actions = ~jnp.any(state.action_mask)
-        time_is_up = state.step_count >= self.time_limit
-        is_already_terminal = time_is_up | no_valid_actions
-
-        return jax.lax.cond(
-            is_already_terminal,
-            self._no_op,
-            self._do_step,
-            state,
-            action,
-        )
-
-    def _no_op(
-        self, state: ImprovementState, action: chex.Array
-    ) -> Tuple[ImprovementState, TimeStep[Observation]]:
-        """Handles the 'no-operation' branch for an already terminal state.
+        The function:
+        1. Updates the graph topology by combining precedence constraints and machine constraints
+        2. Computes the makespan using forward and backward passes on the adjacency matrix
+        3. Calculates the reward
+        4. Updates the incumbent and current objectives
+        5. Increments the iteration counter
+        6. Gets new feasible actions
+        7. Creates a new state and timestep
 
         Args:
-            state: The original, unmodified environment state.
-            action: The action, which is ignored in this branch.
+            state: the environment state containing the current job shop configuration.
+            action: the action to take, representing a pair of operations to be switched.
 
         Returns:
-            A tuple containing the original state and a terminal timestep with zero reward.
-        """
-        obs = self._observation_from_state(state)
-        ts = termination(reward=jnp.array(0.0, dtype=jnp.float32), observation=obs)
-        return state, ts
-
-    def _do_step(
-        self, state: ImprovementState, action: chex.Array
-    ) -> Tuple[ImprovementState, TimeStep[Observation]]:
-        """Handles the 'do step' branch, applying an action to a non-terminal state.
-
-        The function performs the following operations:
-        1. Updates the graph topology based on the selected action.
-        2. Computes the new makespan using forward and backward passes.
-        3. Calculates the reward and updates the incumbent objective.
-        4. Creates the new state with an incremented step count and new feasible actions.
-        5. Determines if this new state is terminal.
-        6. Returns the new state and a corresponding transition or termination timestep.
-
-        Args:
-            state: The current environment state.
-            action: The action to apply.
-
-        Returns:
-            A tuple containing the new environment state and the corresponding timestep.
+            state: the updated environment state with the new configuration.
+            timestep: the updated timestep containing the new observation and reward.
         """
 
         # Convert action to start, end, move_start_end indices
@@ -374,109 +331,6 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         )
 
         return new_state, timestep
-
-    # def step(
-    #     self, state: ImprovementState, action: chex.Array
-    # ) -> Tuple[ImprovementState, TimeStep[Observation]]:
-    #     """Updates the environment state by applying the given action and computing the new makespan.
-
-    #     The function:
-    #     1. Updates the graph topology by combining precedence constraints and machine constraints
-    #     2. Computes the makespan using forward and backward passes on the adjacency matrix
-    #     3. Calculates the reward
-    #     4. Updates the incumbent and current objectives
-    #     5. Increments the iteration counter
-    #     6. Gets new feasible actions
-    #     7. Creates a new state and timestep
-
-    #     Args:
-    #         state: the environment state containing the current job shop configuration.
-    #         action: the action to take, representing a pair of operations to be switched.
-
-    #     Returns:
-    #         state: the updated environment state with the new configuration.
-    #         timestep: the updated timestep containing the new observation and reward.
-    #     """
-
-    #     # Convert action to start, end, move_start_end indices
-    #     # Neighborhood 5 for the moment
-    #     action_ops_pair = select_operations_to_switch(state.critical_block_info, action, 5)
-    #     # Update graph topology based on action
-    #     new_adj_mat_mc = update_disjunctive_graph(
-    #         state.adj_mat_mc, state.ops_durations, action_ops_pair
-    #     )
-    #     adj_mat = jnp.maximum(
-    #         state.adj_mat_pc, new_adj_mat_mc
-    #     )  # to handle the case where job and machine constraints are in conflict
-    #     # Compute makespan using forward and backward pass
-    #     est, lst, makespan = compute_est_lst_makespan(
-    #         adj_mat, state.ops_durations, self.max_num_edges
-    #     )
-    #     new_scheduled_times = est[1:-1].reshape(
-    #         (self.max_num_jobs, self.max_num_ops)
-    #     )  # discard source and target and set scheduled times to earliest start times
-    #     new_scheduled_times = jnp.where(
-    #         new_scheduled_times == -jnp.inf, -1, new_scheduled_times
-    #     )  # replace -inf with -1
-    #     # Identify critical operations
-    #     is_on_critical_path = (est[1:-1] == lst[1:-1]).reshape(
-    #         (self.max_num_jobs, self.max_num_ops)
-    #     )
-
-    #     # Compute reward
-    #     reward = jnp.maximum(state.incumbent_makespan - makespan, 0)
-    #     incumbent_makespan = jnp.minimum(state.incumbent_makespan, makespan)
-    #     step_minimum = jnp.where(
-    #         makespan < state.incumbent_makespan,
-    #         state.step_count + 1,
-    #         state.step_minimum,
-    #     )
-    #     # reward = state.makespan - makespan
-
-    #     action_mask, critical_block_info = self._create_action_mask(
-    #         est, lst, new_adj_mat_mc, state.ops_durations
-    #     )
-    #     # Check if there are any valid actions in the action mask
-    #     has_valid_actions = jnp.any(action_mask)
-
-    #     #New! for masking operation pairs:
-    #     operation_pairs_mask = fully_convert_to_operation_pairs_N5(critical_block_info, action_mask)
-
-    #     # Create new state
-    #     new_state = ImprovementState(
-    #         ops_machine_ids=state.ops_machine_ids,
-    #         ops_durations=state.ops_durations,
-    #         num_ops_per_job=state.num_ops_per_job,
-    #         step_count=state.step_count + 1,
-    #         scheduled_times=new_scheduled_times,
-    #         adj_mat_pc=state.adj_mat_pc,
-    #         adj_mat_mc=new_adj_mat_mc,
-    #         makespan=makespan,
-    #         incumbent_makespan=incumbent_makespan,
-    #         step_minimum=step_minimum,
-    #         is_on_critical_path=is_on_critical_path,
-    #         action_mask=action_mask,
-    #         operation_pairs_mask=operation_pairs_mask,
-    #         critical_block_info=critical_block_info,
-    #         est=est,
-    #         lst=lst,
-    #         key=state.key,
-    #     )
-
-    #     # Create observation
-    #     next_obs = self._observation_from_state(new_state)
-
-    #     done = state.step_count >= self.time_limit
-
-    #     timestep = jax.lax.cond(
-    #         done | ~has_valid_actions,
-    #         termination,
-    #         transition,
-    #         reward,
-    #         next_obs,
-    #     )
-
-    #     return new_state, timestep
 
     def animate(
         self,
