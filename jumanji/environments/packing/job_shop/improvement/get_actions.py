@@ -337,7 +337,7 @@ def get_action_mask_n6(
     #check also that est of machine predecessor of right end is before est of job successor of current operation
     machine_predecessor_of_right_end_idx = critical_block_info[right_end_idx, CBFields.LEFT_NEIGHBOR]
     est_machine_predecessor_of_right_end_idx = est[machine_predecessor_of_right_end_idx+1] #+1 to have the correct operation index (due to source in est)
-    right_end_precedence_ok = right_end_precedence_ok & ((est_machine_predecessor_of_right_end_idx < est_successor_of_current_op) | mask_no_successor_current_op)
+    right_end_precedence_ok = right_end_precedence_ok & ((est_machine_predecessor_of_right_end_idx <= est_successor_of_current_op) | mask_no_successor_current_op)
 
     #for left move
     left_end_idx = critical_block_info[:, CBFields.LEFT_END]
@@ -354,7 +354,7 @@ def get_action_mask_n6(
     #check also that est of machine successor of left end is after est of job predecessor of current operation
     machine_successor_of_left_end_idx = critical_block_info[left_end_idx, CBFields.RIGHT_NEIGHBOR]
     est_machine_successor_of_left_end_idx = est[machine_successor_of_left_end_idx+1] #+1 to have the correct operation index (due to source in est)
-    left_end_precedence_ok = left_end_precedence_ok & ((est_predecessor_of_current_op_idx < est_machine_successor_of_left_end_idx) | mask_no_predecessor_current_op)
+    left_end_precedence_ok = left_end_precedence_ok & ((est_predecessor_of_current_op_idx <= est_machine_successor_of_left_end_idx) | mask_no_predecessor_current_op)
 
     only_2_ops_in_cb_for_right = (critical_block_info[:, CBFields.LEFT_NEIGHBOR]==critical_block_info[:, CBFields.LEFT_END])
 
@@ -372,7 +372,7 @@ def get_action_mask_n6(
     # iN THIS CASE, WE ONLY WANT TO ALLOW MOVE FOR THE LEFT OPERATION
 
     action_mask = jnp.stack([left_valid, right_valid], axis=-1)
-    
+
     return action_mask.astype(jnp.bool_)
 
 
