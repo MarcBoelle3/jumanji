@@ -110,6 +110,63 @@ def get_successor(adj_matrix_mc: chex.Array, op: chex.Array) -> chex.Array:
     )  # by construction, there is at most one successor; shape (max_num_jobs*max_num_ops+2,)
 
 
+# def update_disjunctive_graph(
+#     adj_matrix_mc: chex.Array,
+#     ops_duration: chex.Array,
+#     action: Tuple[int, int, int],  # à check
+# ) -> chex.Array:
+#     """Update the machine constraint matrix for a job shop neighborhood move.
+
+#     Args:
+#         adj_matrix_mc: Machine constraint matrix including source and sink.
+#         ops_duration: Duration of operations.
+#         action: Tuple (start, end, move_start_end) with operation indices (excluding source).
+#                 move_start_end: 0 = start stays at its position and end moves before it.
+#                                 1 = end stays at its position and start moves after it.
+#                 move_start_end is dummy for N5 neighborhood but required for N6 neighborhood.
+
+#     Returns:
+#         Updated adjacency matrix of the disjunctive graph.
+#     """
+#     start, end, move_start_end = action
+#     start_idx, end_idx = start + 1, end + 1
+#     n = adj_matrix_mc.shape[0]
+
+#     # Create one-hot masks
+#     start_mask = jnp.arange(n) == start_idx
+#     end_mask = jnp.arange(n) == end_idx
+
+#     # Common nodes
+#     pred_start = get_predecessor(adj_matrix_mc, op=start_idx)
+#     succ_start = get_successor(adj_matrix_mc, op=start_idx)
+#     succ_end = get_successor(adj_matrix_mc, op=end_idx)
+
+#     # === Always do: update (start -> succ(end)) and (end -> start) ===
+#     adj_matrix_mc = unlink_ops(adj_matrix_mc, end_mask, succ_end)
+#     adj_matrix_mc = link_ops(adj_matrix_mc, ops_duration, start_mask, succ_end)
+
+#     adj_matrix_mc = unlink_ops(adj_matrix_mc, start_mask, succ_start)
+#     adj_matrix_mc = link_ops(adj_matrix_mc, ops_duration, end_mask, start_mask)
+
+#     # === Branch: update pred(start) links depending on direction ===
+#     def case_move_end_to_start(mat: chex.Array) -> chex.Array:
+#         mat = unlink_ops(mat, pred_start, start_mask)
+#         mat = link_ops(mat, ops_duration, pred_start, end_mask)
+#         return mat
+
+#     def case_move_start_to_end(mat: chex.Array) -> chex.Array:
+#         mat = unlink_ops(mat, pred_start, start_mask)
+#         mat = link_ops(mat, ops_duration, pred_start, succ_start)
+#         return mat
+
+#     adj_matrix_mc = jax.lax.cond(
+#         move_start_end == 0, case_move_end_to_start, case_move_start_to_end, adj_matrix_mc
+#     )
+#     jax.debug.print("move start end: {}", move_start_end)
+
+
+#     return adj_matrix_mc
+
 def update_disjunctive_graph(
     adj_matrix_mc: chex.Array,
     ops_duration: chex.Array,
@@ -138,29 +195,39 @@ def update_disjunctive_graph(
 
     # Common nodes
     pred_start = get_predecessor(adj_matrix_mc, op=start_idx)
+    pred_end = get_predecessor(adj_matrix_mc, op=end_idx)
     succ_start = get_successor(adj_matrix_mc, op=start_idx)
     succ_end = get_successor(adj_matrix_mc, op=end_idx)
 
-    # === Always do: update (start -> succ(end)) and (end -> start) ===
-    adj_matrix_mc = unlink_ops(adj_matrix_mc, end_mask, succ_end)
-    adj_matrix_mc = link_ops(adj_matrix_mc, ops_duration, start_mask, succ_end)
+    # === Always do: link end to start, and unlink end -> succ(end) ===
 
-    adj_matrix_mc = unlink_ops(adj_matrix_mc, start_mask, succ_start)
+    adj_matrix_mc = unlink_ops(adj_matrix_mc, end_mask, succ_end)
     adj_matrix_mc = link_ops(adj_matrix_mc, ops_duration, end_mask, start_mask)
 
     # === Branch: update pred(start) links depending on direction ===
     def case_move_end_to_start(mat: chex.Array) -> chex.Array:
+        #unlink pred(start) -> start and link pred(start) to end
         mat = unlink_ops(mat, pred_start, start_mask)
         mat = link_ops(mat, ops_duration, pred_start, end_mask)
+
+        #unlink pred(end) -> end and link pred(end) to succ(end)
+        mat = unlink_ops(mat, pred_end, end_mask)
+        mat = link_ops(mat, ops_duration, pred_end, succ_end)
         return mat
 
     def case_move_start_to_end(mat: chex.Array) -> chex.Array:
+        #unlink pred(start) -> start and link pred(start) to succ(start)
         mat = unlink_ops(mat, pred_start, start_mask)
         mat = link_ops(mat, ops_duration, pred_start, succ_start)
+
+        #unlink start -> succ(start) and link start to succ(end)
+        mat = unlink_ops(mat, start_mask, succ_start)
+        mat = link_ops(mat, ops_duration, start_mask, succ_end)
+
         return mat
 
     adj_matrix_mc = jax.lax.cond(
-        move_start_end == 0, case_move_start_to_end, case_move_end_to_start, adj_matrix_mc
+        move_start_end == 0, case_move_end_to_start, case_move_start_to_end, adj_matrix_mc
     )
 
     return adj_matrix_mc
