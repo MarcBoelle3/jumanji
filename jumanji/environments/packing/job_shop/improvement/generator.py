@@ -25,7 +25,8 @@ from jumanji.environments.packing.job_shop.improvement.compute_makespan import (
 from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_action_mask_n5,
     get_critical_operations,
-    fully_convert_to_operation_pairs_N5
+    fully_convert_to_operation_pairs_N5,
+    get_action_mask_n6
 )
 from jumanji.environments.packing.job_shop.improvement.types import ImprovementState
 from jumanji.environments.packing.job_shop.types import Scenario
@@ -147,7 +148,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
     ) -> None:
         super().__init__(num_jobs, num_machines, max_num_jobs, max_num_ops)
 
-    def __call__(self, key: chex.PRNGKey, scenario: Scenario, method_id: int) -> ImprovementState:
+    def __call__(self, key: chex.PRNGKey, scenario: Scenario, method_id: int, neighborhood: int) -> ImprovementState:
         # Compute the maximum number of edges in the disjunctive graph.
         max_num_edges = (1 + 2 * self.max_num_ops) * self.max_num_jobs
 
@@ -186,7 +187,10 @@ class RandomScheduleGenerator(ScheduleGenerator):
         critical_block_info = get_critical_operations(
             est, lst, adj_mat_mc, ops_durations, self.max_num_jobs, self.max_num_ops, max_num_edges
         )
-        action_mask = get_action_mask_n5(critical_block_info, self.max_num_ops)
+        action_mask = jax.lax.cond(neighborhood == 5, 
+                                   lambda x: get_action_mask_n5(x, self.max_num_ops), 
+                                   lambda x: get_action_mask_n6(x, self.max_num_ops, est, num_ops_per_job),
+                                   critical_block_info)
         operation_pairs_mask = fully_convert_to_operation_pairs_N5(critical_block_info=critical_block_info, action_mask=action_mask)
         # Time starts at 0
         step_count = jnp.array(0, jnp.int32)

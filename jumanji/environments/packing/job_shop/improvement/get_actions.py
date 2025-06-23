@@ -252,6 +252,130 @@ def get_action_mask_n5(critical_block_info: chex.Array, max_num_ops: int) -> che
     return action_mask
 
 
+def get_action_mask_n6(
+    critical_block_info: chex.Array,
+    max_num_ops: int,
+    est: chex.Array,
+    num_ops_per_job: int,
+) -> chex.Array:
+    """
+    Get the N6 action mask in a JIT-safe way by using fixed maximum sizes.
+    
+    Args:
+        critical_block_info: Padded array of critical block info.
+        num_ops_real: The actual number of valid operations in the padded array.
+        max_num_ops: Max operations per job (will be a static argument).
+        max_num_jobs: Max jobs in the problem (will be a static argument).
+    """
+    ### ÉTAPE 2: Utiliser les dimensions statiques, pas .shape ###
+    # Calculez la taille totale maximale à partir des arguments statiques.
+    num_ops_total = critical_block_info.shape[0]
+    
+    # === 1. Dériver les IDs sur la base de la taille maximale ===
+    ops_idx = jnp.arange(num_ops_total)
+    ops_job_ids = ops_idx // max_num_ops
+
+    # === 2. Extraire les informations de base des blocs ===
+    is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH].astype(jnp.bool_)
+    block_ids = critical_block_info[:, CBFields.BLOCK_ID]
+
+    # === 3. Calculer num_segments de manière 100% STATIQUE ===
+    # On utilise SEULEMENT les arguments statiques pour cette valeur critique.
+    num_jobs = num_ops_total//max_num_ops
+    num_segments = num_jobs * num_ops_total
+    
+    # L'ID de groupe est calculé pour tout le tableau, y compris le padding.
+    group_id = ops_job_ids * num_ops_total + block_ids #block_ids is necessary smaller than num_ops_total, so a group_id matches a unique (job, block) pair
+    # jax.debug.print("ops_job_ids: {}", ops_job_ids)
+    # jax.debug.print("block_ids: {}", block_ids)
+    # jax.debug.print("group_id: {}", group_id)
+    # === 4. Trouver les opérations de plus petit et plus grand index dans chaque groupe ===
+    # Ces appels sont maintenant JIT-safe car `num_segments` est une constante pour le compilateur.
+    first_op_idx_in_group = jax.ops.segment_min(
+        ops_idx, group_id, num_segments=num_segments
+    )
+    last_op_idx_in_group = jax.ops.segment_max(
+        ops_idx, group_id, num_segments=num_segments
+    )
+    # jax.debug.print("first_op_idx_in_group: {}", first_op_idx_in_group)
+    # jax.debug.print("last_op_idx_in_group: {}", last_op_idx_in_group)
+    # === 5. Vérifier la contrainte de précédence pour chaque opération ===
+    first_op_for_this_op_group = first_op_idx_in_group[group_id]
+    last_op_for_this_op_group = last_op_idx_in_group[group_id]
+    # jax.debug.print("first_op_for_this_op_group: {}", first_op_for_this_op_group)
+    # jax.debug.print("last_op_for_this_op_group: {}", last_op_for_this_op_group)
+
+    job_precedence_ok_left = (ops_idx == first_op_for_this_op_group)
+    job_precedence_ok_right = (ops_idx == last_op_for_this_op_group)
+
+    # === 6. Combiner toutes les conditions ===
+    # 
+    is_left = critical_block_info[:, CBFields.IS_LEFT].astype(jnp.bool_)
+    is_right = critical_block_info[:, CBFields.IS_RIGHT].astype(jnp.bool_)
+    can_physically_move_left = ~is_left
+    can_physically_move_right = ~is_right
+
+    is_internal = is_critical & can_physically_move_left & can_physically_move_right  # shape (num_ops_total,)
+    is_left_and_not_right = is_critical & ~can_physically_move_left & can_physically_move_right
+    is_right_and_not_left = is_critical & can_physically_move_left & ~can_physically_move_right
+
+    # Check that est of job-successor of operation is after est of predecessor of neighbor operation
+    #for right move
+    right_end_idx = critical_block_info[:, CBFields.RIGHT_END]
+    mask_no_predecessor_right_end = right_end_idx % max_num_ops == 0
+    predecessor_of_right_end_idx = right_end_idx - 1 
+    est_predecessor_of_right_end_idx = est[predecessor_of_right_end_idx+1] #+1 to have the correct operation index (due to source in est)
+    #Get successor of current operation
+    mask_no_successor_current_op = ops_idx % max_num_ops == num_ops_per_job[ops_idx//max_num_ops]-1 # relative position to the job =? last one in the job
+    successor_op_idx = ops_idx + 1
+    successor_op_idx = jnp.where(mask_no_successor_current_op, -1, successor_op_idx)
+    est_successor_of_current_op = est[successor_op_idx+1] #+1 to have the correct operation index (due to source in est)
+    right_end_precedence_ok = est_successor_of_current_op > est_predecessor_of_right_end_idx
+    #Put right_end_precedence ok if there is no successor or predecessor
+    right_end_precedence_ok = jnp.where(mask_no_predecessor_right_end | mask_no_successor_current_op, True, right_end_precedence_ok)
+
+    #check also that est of machine predecessor of right end is before est of job successor of current operation
+    machine_predecessor_of_right_end_idx = critical_block_info[right_end_idx, CBFields.LEFT_NEIGHBOR]
+    est_machine_predecessor_of_right_end_idx = est[machine_predecessor_of_right_end_idx+1] #+1 to have the correct operation index (due to source in est)
+    right_end_precedence_ok = right_end_precedence_ok & ((est_machine_predecessor_of_right_end_idx < est_successor_of_current_op) | mask_no_successor_current_op)
+
+    #for left move
+    left_end_idx = critical_block_info[:, CBFields.LEFT_END]
+    mask_no_successor_left_end = left_end_idx % max_num_ops == num_ops_per_job[left_end_idx//max_num_ops]-1 # relative position to the job =? last one in the job
+    successor_of_left_end_idx = left_end_idx + 1
+    successor_of_left_end_idx = jnp.where(mask_no_successor_left_end, -1, successor_of_left_end_idx)
+    est_successor_of_left_end_idx = est[successor_of_left_end_idx+1] #+1 to have the correct operation index (due to source in est)
+    mask_no_predecessor_current_op = ops_idx % max_num_ops == 0
+    predecessor_of_current_op_idx = ops_idx - 1
+    est_predecessor_of_current_op_idx = est[predecessor_of_current_op_idx+1] #+1 to have the correct operation index (due to source in est)
+    left_end_precedence_ok = est_predecessor_of_current_op_idx < est_successor_of_left_end_idx
+    left_end_precedence_ok = jnp.where(mask_no_predecessor_current_op | mask_no_successor_left_end, True, left_end_precedence_ok)
+
+    #check also that est of machine successor of left end is after est of job predecessor of current operation
+    machine_successor_of_left_end_idx = critical_block_info[left_end_idx, CBFields.RIGHT_NEIGHBOR]
+    est_machine_successor_of_left_end_idx = est[machine_successor_of_left_end_idx+1] #+1 to have the correct operation index (due to source in est)
+    left_end_precedence_ok = left_end_precedence_ok & ((est_predecessor_of_current_op_idx < est_machine_successor_of_left_end_idx) | mask_no_predecessor_current_op)
+
+    only_2_ops_in_cb_for_right = (critical_block_info[:, CBFields.LEFT_NEIGHBOR]==critical_block_info[:, CBFields.LEFT_END])
+
+    #jax.debug.print("any true in only_2_ops_in_cb_for_right on critical: {}", jnp.any(only_2_ops_in_cb_for_right & is_critical))
+    ### ÉTAPE 4: Appliquer le masque de validité au résultat final ###
+    # L'action est valide si l'op est VALIDE, critique, peut physiquement bouger,
+    # ET respecte la précédence de son job.
+    #Asymetric because of the way we define the mask, to have a unique action when there are 2 operations in the critical block
+    # (because move left to right and right to left are the same action)
+    left_valid = (is_internal | (is_right_and_not_left&~only_2_ops_in_cb_for_right)) & job_precedence_ok_left & left_end_precedence_ok
+    right_valid = (is_internal | is_left_and_not_right) & job_precedence_ok_right & right_end_precedence_ok
+
+    # right_valid = is_internal & job_precedence_ok_right
+    #CASE WHERE THERE ARE 2 OPERATIONS IN THE CRITICAL BLOCK
+    # iN THIS CASE, WE ONLY WANT TO ALLOW MOVE FOR THE LEFT OPERATION
+
+    action_mask = jnp.stack([left_valid, right_valid], axis=-1)
+    
+    return action_mask.astype(jnp.bool_)
+
+
 def select_operations_to_switch(
     critical_block_info: chex.Array, chosen_action: chex.Array, neighborhood: int
 ) -> chex.Array:

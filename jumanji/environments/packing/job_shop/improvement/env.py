@@ -33,8 +33,10 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_action_mask_n5,
     get_critical_operations,
     select_operations_to_switch,
-    fully_convert_to_operation_pairs_N5
+    fully_convert_to_operation_pairs_N5,
+    get_action_mask_n6
 )
+
 from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Observation
 from jumanji.environments.packing.job_shop.improvement.update_sol import update_disjunctive_graph
 from jumanji.environments.packing.job_shop.scenario_generator import (
@@ -60,6 +62,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         schedule_generator: Optional[ScheduleGenerator] = None,
         viewer: Optional[Viewer[ImprovementState]] = None,
         time_limit: int = 500,
+        neighborhood: int = 5,
     ):
         """Initialize the Job Shop Improvement environment.
 
@@ -85,6 +88,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         self.max_num_edges_mc = self.max_num_ops * self.max_num_jobs #upper bound
         self.max_num_edges_pc = self.max_num_jobs * (self.max_num_ops +1)
         self.max_num_edges = self.max_num_edges_mc + self.max_num_edges_pc
+        self.neighborhood = neighborhood
         # Initialize dynamic parameters
         self.num_jobs = self.schedule_generator.num_jobs
         self.num_machines = self.schedule_generator.num_machines
@@ -221,7 +225,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         # Generate a new problem instance
         scenario = self.scenario_generator(key, self.num_jobs, self.num_machines)
         state = self.schedule_generator(
-            scenario.key, scenario, method_id=2
+            scenario.key, scenario, method_id=2, neighborhood=self.neighborhood
         )  # for now, method is fdd/mwr
 
         obs = self._observation_from_state(state)
@@ -254,11 +258,24 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         # Convert action to start, end, move_start_end indices
         # Neighborhood 5 for the moment
-        action_ops_pair = select_operations_to_switch(state.critical_block_info, action, 5)
+        #jax.debug.print("iteration: {}", state.step_count)
+        #jax.debug.print("action: {}", action)
+        action_ops_pair = select_operations_to_switch(state.critical_block_info, action, neighborhood=self.neighborhood)
+        #jax.debug.print("action_ops_pair: {}", action_ops_pair)
+        # Get number of operations in same critical block as start operation
+        start_op_idx = action_ops_pair[0]
+        critical_block_id = state.critical_block_info[start_op_idx, 1] #1 is block_id
+        number_of_ops_in_cb = jnp.sum(state.critical_block_info[:, 1] == critical_block_id)
+        #jax.debug.print("number_of_ops_in_cb: {}", number_of_ops_in_cb)
         # Update graph topology based on action
         new_adj_mat_mc = update_disjunctive_graph(
             state.adj_mat_mc, state.ops_durations, action_ops_pair
         )
+        # Check that new_adj_mat_mc has at most one non-zero coefficient per row
+        num_nonzero_per_row = jnp.sum(new_adj_mat_mc > 0, axis=1)
+        has_valid_adj_mat = jnp.all(num_nonzero_per_row <= 1)
+        #jax.debug.print("has_valid_adj_mat_mc: {}", has_valid_adj_mat)
+
         adj_mat = jnp.maximum(
             state.adj_mat_pc, new_adj_mat_mc
         )  # to handle the case where job and machine constraints are in conflict
@@ -288,11 +305,12 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         # reward = state.makespan - makespan
 
         action_mask, critical_block_info = self._create_action_mask(
-            est, lst, new_adj_mat_mc, state.ops_durations
+            est, lst, new_adj_mat_mc, state.ops_durations, state.num_ops_per_job
         )
         # Check if there are any valid actions in the action mask
         has_valid_actions = jnp.any(action_mask)
-
+        #jax.debug.print("has_valid_actions: {}", has_valid_actions)
+        #jax.debug.breakpoint()
         #New! for masking operation pairs:
         operation_pairs_mask = fully_convert_to_operation_pairs_N5(critical_block_info, action_mask)
 
@@ -352,7 +370,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         return self._viewer.animate(states, interval, save_path)
 
     def _create_action_mask(
-        self, est: chex.Array, lst: chex.Array, adj_mat_mc: chex.Array, ops_durations: chex.Array
+        self, est: chex.Array, lst: chex.Array, adj_mat_mc: chex.Array, ops_durations: chex.Array, num_ops_per_job: chex.Array
     ) -> Tuple[chex.Array, chex.Array]:
         """Create the action mask corresponding to N5 neighborhood."""
 
@@ -365,7 +383,12 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             self.max_num_ops,
             self.max_num_edges,
         )
-        action_mask = get_action_mask_n5(critical_block_info, self.max_num_ops)
+        action_mask = jax.lax.cond(
+            self.neighborhood == 5,
+            lambda x: get_action_mask_n5(x, self.max_num_ops),
+            lambda x: get_action_mask_n6(x, self.max_num_ops, est, num_ops_per_job),
+            critical_block_info
+        )
         return action_mask, critical_block_info
 
     def _observation_from_state(self, state: ImprovementState) -> Observation:
