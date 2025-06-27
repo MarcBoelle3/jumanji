@@ -256,7 +256,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
 
         Args:
             plist: Array (max_num_jobs,) giving the priority order of jobs.
-                   Only the valid jobs are permuted.
+                Only the valid jobs are permuted.
             ops_machine_ids: Array (num_jobs, max_num_ops), -1 for padded operations.
             ops_durations: Array (num_jobs, max_num_ops), -1 for padded operations.
 
@@ -278,39 +278,24 @@ class RandomScheduleGenerator(ScheduleGenerator):
         # Initialize adjacency matrix (machine constraints only, without source/target)
         adj_mat = jnp.zeros((num_ops_total, num_ops_total), dtype=jnp.float32)
 
-        # Initialize machine state to keep track of the last scheduled operation and its duration
-        # Shape: (num_machines, 2), for each machine contains [last_op_id, duration]
-        # Init with -1 to indicate that no operation has been scheduled yet
-        init_machine_state = -jnp.ones((self.num_machines, 2), dtype=jnp.int32)
+        # Separate state: machine_ops (int32), machine_durs (float32)
+        init_machine_ops = -jnp.ones((self.num_machines,), dtype=jnp.int32)
+        init_machine_durs = -jnp.ones((self.num_machines,), dtype=jnp.float32)
 
         # Scan over all operations to add machine constraints
         def add_machine_constraint_edge(
-            carry: Tuple[chex.Array, chex.Array], x: Tuple[int, int, int]
-        ) -> Tuple[Tuple[chex.Array, chex.Array], None]:
-            """Add a machine constraint edge to the adjacency matrix.
-
-            Args:
-                carry: Tuple containing (machine_state, adj_mat)
-                x: Tuple containing (operation id, duration, machine id)
-
-            Returns:
-                Tuple containing (updated machine state, updated adjacency matrix)
-            """
+            carry: Tuple[chex.Array, chex.Array, chex.Array],
+            x: Tuple[int, float, int]
+        ) -> Tuple[Tuple[chex.Array, chex.Array, chex.Array], None]:
+            """Add a machine constraint edge to the adjacency matrix."""
             op_id, duration, machine_id = x
 
             def update_if_valid(
-                carry: Tuple[chex.Array, chex.Array],
-            ) -> Tuple[chex.Array, chex.Array]:
-                """Update the adjacency matrix if the operation is a real one (not padded).
-
-                Args:
-                    carry: Tuple containing (machine_state, adj_mat)
-
-                Returns:
-                    Tuple containing (updated machine state, updated adjacency matrix)
-                """
-                machine_state, adj = carry
-                prev_op_id, prev_duration = machine_state[machine_id]
+                carry: Tuple[chex.Array, chex.Array, chex.Array]
+            ) -> Tuple[chex.Array, chex.Array, chex.Array]:
+                machine_ops, machine_durs, adj = carry
+                prev_op_id = machine_ops[machine_id]
+                prev_duration = machine_durs[machine_id]
 
                 adj = jax.lax.cond(
                     prev_op_id != -1,
@@ -319,20 +304,21 @@ class RandomScheduleGenerator(ScheduleGenerator):
                     operand=adj,
                 )
 
-                machine_state = machine_state.at[machine_id].set([op_id, duration])
-                return machine_state, adj
+                machine_ops = machine_ops.at[machine_id].set(op_id)
+                machine_durs = machine_durs.at[machine_id].set(duration)
+                return machine_ops, machine_durs, adj
 
-            def skip_update(carry: Tuple[chex.Array, chex.Array]) -> Tuple[chex.Array, chex.Array]:
-                """Skip the update if the operation is padded."""
+            def skip_update(
+                carry: Tuple[chex.Array, chex.Array, chex.Array]
+            ) -> Tuple[chex.Array, chex.Array, chex.Array]:
                 return carry
 
             new_carry = jax.lax.cond(machine_id != -1, update_if_valid, skip_update, operand=carry)
-
             return new_carry, None
 
-        (final_machine_state, final_adj_mat), _ = jax.lax.scan(
+        (final_machine_ops, final_machine_durs, final_adj_mat), _ = jax.lax.scan(
             add_machine_constraint_edge,
-            (init_machine_state, adj_mat),
+            (init_machine_ops, init_machine_durs, adj_mat),
             (ordered_ops, ordered_durations, ordered_machines),
         )
 
@@ -377,15 +363,14 @@ class RandomScheduleGenerator(ScheduleGenerator):
 
         # Each machine keeps track of the last scheduled operation and its duration
         # Init with -1 to indicate that no operation has been scheduled yet
-        init_machine_state = -jnp.ones(
-            (self.num_machines, 2), dtype=jnp.int32
-        )  # shape: (num_machines, [last_op_id, duration])
+        init_machine_ops = -jnp.ones((self.num_machines,), dtype=jnp.int32)
+        init_machine_durs = -jnp.ones((self.num_machines,), dtype=jnp.float32)
 
         def check_remaining_ops(
             carry: Tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
         ) -> jnp.bool_:
             """Check if there are still operations to be scheduled."""
-            _, _, cand_ops, _, _ = carry
+            _, _, _, cand_ops, _, _ = carry
             # Continue while there are still operations to be scheduled
             return ~jnp.all(cand_ops == -1)
 
@@ -405,7 +390,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
                                   updated ops_durations)
             """
 
-            machine_state, adj, cand_ops, rank, ops_durations = carry
+            machine_ops, machine_durs, adj, cand_ops, rank, ops_durations = carry
             num_ops_per_job = jnp.sum(ops_machine_ids != -1, axis=1)
 
             # Choose operation to be scheduled next
@@ -415,7 +400,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
             duration = ops_durations[op_id // self.max_num_ops, op_id % self.max_num_ops]
 
             # Get the last operation scheduled on the same machine
-            prev_op, prev_duration = machine_state[machine_id]
+            prev_op, prev_duration = machine_ops[machine_id], machine_durs[machine_id]
             cond_prev = prev_op != -1
 
             # Create edge if there is a previous operation on the same machine
@@ -427,7 +412,8 @@ class RandomScheduleGenerator(ScheduleGenerator):
             )
 
             # Update the machine state
-            machine_state = machine_state.at[machine_id].set([op_id, duration])
+            machine_ops = machine_ops.at[machine_id].set(op_id)
+            machine_durs = machine_durs.at[machine_id].set(duration)
 
             # Update candidate operations and their ranks
             new_op_id = jnp.where(
@@ -442,13 +428,13 @@ class RandomScheduleGenerator(ScheduleGenerator):
             )
             rank = rank.at[job_id].set(new_rank)
 
-            return machine_state, adj, cand_ops, rank, ops_durations
+            return machine_ops, machine_durs, adj, cand_ops, rank, ops_durations
 
         # Initialize the loop carry state
-        init_carry = (init_machine_state, adj_mat, init_cand_ops, init_rank, ops_durations)
+        init_carry = (init_machine_ops, init_machine_durs, adj_mat, init_cand_ops, init_rank, ops_durations)
 
         # Run the while loop to build the machine constraint adjacency matrix
-        _, final_adj_mat, _, _, _ = jax.lax.while_loop(
+        _, _, final_adj_mat, _, _, _ = jax.lax.while_loop(
             check_remaining_ops, add_machine_constraint_edge, init_carry
         )
 
@@ -458,6 +444,8 @@ class RandomScheduleGenerator(ScheduleGenerator):
         )
 
         return adj_with_source_target
+
+
 
     def init_adj_mat_mc_with_fdd_mwr(
         self,
@@ -481,7 +469,8 @@ class RandomScheduleGenerator(ScheduleGenerator):
         adj_mat = jnp.zeros((num_ops_total, num_ops_total), dtype=jnp.float32)
 
         # State for each machine: [last_op_id, duration_of_last_op]
-        init_machine_state = -jnp.ones((self.num_machines, 2), dtype=jnp.int32)
+        init_machine_ops = -jnp.ones((self.num_machines,), dtype=jnp.int32)
+        init_machine_durs = -jnp.ones((self.num_machines,), dtype=jnp.float32)
 
         # Initial candidate operations are the first operation of each job
         init_cand_ops = jnp.arange(0, num_ops_total, self.max_num_ops, dtype=jnp.int32)
@@ -493,12 +482,12 @@ class RandomScheduleGenerator(ScheduleGenerator):
 
         def check_remaining_ops(carry):
             """Continue as long as at least one job has a candidate operation."""
-            _, _, cand_ops, _, _ = carry
+            _, _, _, cand_ops, _, _ = carry
             return jnp.any(cand_ops != -1)
 
         def schedule_next_op(carry):
             """Selects and schedules the highest-priority op based on FDD/MWR."""
-            machine_state, adj, cand_ops, work_remaining, due_dates = carry
+            machine_ops, machine_durs, adj, cand_ops, work_remaining, due_dates = carry
 
             # Update due dates: add duration of cand_ops if it's not padded
             due_dates = due_dates.at[cand_ops // self.max_num_ops].add(ops_durations[cand_ops // self.max_num_ops, cand_ops % self.max_num_ops])
@@ -521,7 +510,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
             machine_id = ops_machine_ids[op_row, op_col]
             duration = ops_durations[op_row, op_col]
 
-            prev_op, prev_duration = machine_state[machine_id]
+            prev_op, prev_duration = machine_ops[machine_id], machine_durs[machine_id]
             
             # Add edge if there was a previous operation on this machine
             adj = jax.lax.cond(
@@ -530,7 +519,8 @@ class RandomScheduleGenerator(ScheduleGenerator):
                 lambda a: a,
                 operand=adj
             )
-            machine_state = machine_state.at[machine_id].set(jnp.array([op_id, duration]))
+            machine_ops = machine_ops.at[machine_id].set(op_id)
+            machine_durs = machine_durs.at[machine_id].set(duration)
 
             # --- Update State for the Next Iteration ---
             work_remaining = work_remaining.at[job_id].add(-duration)
@@ -541,11 +531,11 @@ class RandomScheduleGenerator(ScheduleGenerator):
             new_cand_op = jnp.where(is_job_finished, -1, op_id + 1)
             cand_ops = cand_ops.at[job_id].set(new_cand_op)
 
-            return machine_state, adj, cand_ops, work_remaining, due_dates
+            return machine_ops, machine_durs, adj, cand_ops, work_remaining, due_dates
 
         # Run the while loop to build the schedule
-        init_carry = (init_machine_state, adj_mat, init_cand_ops, init_work_remaining, init_due_dates)
-        _, final_adj_mat, _, _, _ = jax.lax.while_loop(
+        init_carry = (init_machine_ops, init_machine_durs, adj_mat, init_cand_ops, init_work_remaining, init_due_dates)
+        _, _, final_adj_mat, _, _, _ = jax.lax.while_loop(
             check_remaining_ops, schedule_next_op, init_carry
         )
         

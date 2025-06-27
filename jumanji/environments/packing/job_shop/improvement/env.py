@@ -125,7 +125,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         Returns:
             Spec containing the specifications for all the `Observation` fields:
             - ops_machine_ids: BoundedArray (int32) of shape (num_jobs, max_num_ops).
-            - ops_durations: BoundedArray (int32) of shape (num_jobs, max_num_ops).
+            - ops_durations: BoundedArray (float32) of shape (num_jobs, max_num_ops).
             - adj_mat_pc: BoundedArray (int32) of shape (num_jobs, num_jobs).
             - adj_mat_mc: BoundedArray (int32) of shape (num_jobs, num_jobs).
             - makespan: BoundedArray (int32) of shape ().
@@ -139,7 +139,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         )
         ops_durations = specs.BoundedArray(
             shape=(self.max_num_jobs, self.max_num_ops),
-            dtype=jnp.int32,
+            dtype=jnp.float32,
             minimum=-1,
             maximum=self.max_op_duration,
             name="ops_durations",
@@ -171,7 +171,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         )
         observation_features = specs.Array(
             shape=(self.max_num_jobs * self.max_num_ops + 2, 3),
-            dtype=jnp.int32,
+            dtype=jnp.float32,
             name="observation_features",
         )
         operation_pairs_mask = specs.Array(
