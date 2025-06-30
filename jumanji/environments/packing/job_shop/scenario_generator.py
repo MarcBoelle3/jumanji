@@ -121,8 +121,9 @@ class RandomScenarioGenerator(ScenarioGenerator):
 
     For instances with num_jobs lower than max_num_jobs, the extra jobs are padded with -1."""
 
-    def __init__(self, max_num_jobs: int, max_num_ops: int, max_op_duration: int) -> None:
+    def __init__(self, max_num_jobs: int, max_num_ops: int, max_op_duration: int, hard_num_ops_per_job: bool = False) -> None:
         super().__init__(max_num_jobs, max_num_ops, max_op_duration)
+        self.hard_num_ops_per_job = hard_num_ops_per_job
 
     def __call__(self, key: chex.PRNGKey, num_jobs: int, num_machines: int) -> Scenario:
         key, machine_key, duration_key, ops_key = jax.random.split(key, num=4)
@@ -142,12 +143,15 @@ class RandomScenarioGenerator(ScenarioGenerator):
         )
 
         # Vary the number of ops across jobs
-        num_ops_per_job = jax.random.randint(
-            ops_key,
-            shape=(self.max_num_jobs,),
-            minval=1,
-            maxval=self.max_num_ops + 1,
-        )
+        if self.hard_num_ops_per_job:
+            num_ops_per_job = jnp.full((self.max_num_jobs,), self.max_num_ops, dtype=jnp.int32)
+        else:
+            num_ops_per_job = jax.random.randint(
+                ops_key,
+                shape=(self.max_num_jobs,),
+                minval=1,
+                maxval=self.max_num_ops + 1,
+            )
 
         # Set number of jobs to 0 for non-existing jobs
         jobs_mask = jnp.less(jnp.arange(self.max_num_jobs), num_jobs)  # shape (max_num_jobs,)
@@ -174,5 +178,96 @@ class RandomScenarioGenerator(ScenarioGenerator):
             num_ops_per_job=num_ops_per_job,
             key=key,
         )
+
+        return scenario
+
+
+class FromDataSetScenarioGenerator(ScenarioGenerator):
+    """Scenario generator that loads instances from a pre-existing dataset stored in a .npy file.
+    The generator serves scenarios sequentially from the dataset on each call.
+    """
+
+    def __init__(self, dataset_path: str):
+        """Initializes the generator by loading a dataset from a file.
+
+        The dataset is expected to be a NumPy array with a specific shape.
+
+        Args:
+            dataset_path: Path to the .npy file containing the dataset. The array shape must be
+                (n_instances, 2, n_jobs, n_machines), where the second dimension contains
+                the duration matrix at index 0 and the machine assignment matrix at index 1.
+        """
+        try:
+            dataset = jnp.load(dataset_path)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Dataset file not found at: {dataset_path}")
+
+        if dataset.ndim != 4 or dataset.shape[1] != 2:
+            raise ValueError(
+                f"Invalid dataset shape. Expected (n_instances, 2, n_jobs, n_machines), "
+                f"but got {dataset.shape}."
+            )
+
+        self.dataset = dataset
+        self.num_instances = dataset.shape[0]
+        self.instance_idx = 0
+
+        n_jobs = dataset.shape[2]
+        n_machines = dataset.shape[3]  # In this formulation, n_machines is n_ops
+        max_duration = jnp.max(self.dataset[:, 0, :, :])
+        print(f"Type of max_duration: {type(max_duration)}")
+
+        super().__init__(
+            max_num_jobs=n_jobs,
+            max_num_ops=n_machines,
+            max_op_duration=int(max_duration),
+        )
+
+    def __call__(self, key: chex.PRNGKey, num_jobs: int, num_machines: int) -> Scenario:
+        """Returns the next scenario from the loaded dataset.
+
+        Ignores the input arguments as the scenarios are pre-determined by the dataset.
+
+        Args:
+            key: Unused jax random key.
+            num_jobs: Unused number of jobs.
+            num_machines: Unused number of machines.
+
+        Returns:
+            A `Scenario` object for the current instance.
+
+        Raises:
+            IndexError: If all instances from the dataset have already been served.
+        """
+        del key, num_jobs, num_machines  # These are determined by the dataset
+
+        if self.instance_idx >= self.num_instances:
+            raise IndexError("All instances from the dataset have been served.")
+
+        # Extract the data for the current instance
+        ops_durations = self.dataset[self.instance_idx, 0, :, :].astype(jnp.float32)
+        #in the original dataset, the machine ids are 1-indexed
+        ops_machine_ids = self.dataset[self.instance_idx, 1, :, :].astype(jnp.int32) - 1
+        #NORMALIZE TO 6 the OP_DURATION(model trained with this)
+        ops_durations = ops_durations / self.max_op_duration * 6
+        # The number of operations for each job is constant (equal to num_machines)
+        num_ops_per_job = jnp.sum(ops_machine_ids != -1, axis=1, dtype=jnp.int32)
+        
+        # Use a deterministic key based on the instance index for reproducibility
+        instance_key = jax.random.PRNGKey(self.instance_idx)
+
+        scenario = Scenario(
+            num_jobs=self.max_num_jobs,
+            num_machines=self.max_num_ops,
+            max_num_jobs=self.max_num_jobs,
+            max_num_ops=self.max_num_ops,
+            ops_machine_ids=ops_machine_ids,
+            ops_durations=ops_durations,
+            num_ops_per_job=num_ops_per_job,
+            key=instance_key,
+        )
+        
+        # Move to the next instance for the subsequent call
+        self.instance_idx += 1
 
         return scenario
