@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from functools import cached_property
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple, Literal
 
 import chex
 import jax
@@ -63,6 +63,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         viewer: Optional[Viewer[ImprovementState]] = None,
         time_limit: int = 500,
         neighborhood: int = 5,
+        reward_type: Literal["incumbent", "composed"] = "incumbent",
+        reward_scale: float = 0.3
     ):
         """Initialize the Job Shop Improvement environment.
 
@@ -94,6 +96,10 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         self.num_machines = self.schedule_generator.num_machines
         self.time_limit = time_limit
 
+        # Initialize reward parameters
+        self.reward_type = reward_type
+        self.reward_scale = reward_scale
+        
         super().__init__()
 
         # Create viewer used for rendering
@@ -295,7 +301,10 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         )
 
         # Compute reward
-        reward = jnp.maximum(state.incumbent_makespan - makespan, 0)
+        if self.reward_type == "incumbent":
+            reward = jnp.maximum(state.incumbent_makespan - makespan, 0)
+        elif self.reward_type == "composed":
+            reward = jnp.maximum(state.incumbent_makespan - makespan, 0) + self.reward_scale * (state.makespan - makespan)
         incumbent_makespan = jnp.minimum(state.incumbent_makespan, makespan)
         step_minimum = jnp.where(
             makespan < state.incumbent_makespan,
