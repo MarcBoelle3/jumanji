@@ -439,9 +439,9 @@ def get_action_mask_n5(critical_block_info: chex.Array, max_num_ops: int) -> che
     num_ops_total = critical_block_info.shape[0]
 
     # Extract left and right ends of critical blocks
-    is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH]
-    is_left_end = critical_block_info[:, CBFields.IS_LEFT]
-    is_right_end = critical_block_info[:, CBFields.IS_RIGHT]
+    is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH].astype(jnp.bool_)
+    is_left_end = critical_block_info[:, CBFields.IS_LEFT].astype(jnp.bool_)
+    is_right_end = critical_block_info[:, CBFields.IS_RIGHT].astype(jnp.bool_)
 
     # Mask operations that are both left and right ends
     # (1 operation per critical block, no possible action)
