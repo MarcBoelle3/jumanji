@@ -420,13 +420,18 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         edges_pc = jnp.stack([senders_pc, receivers_pc], axis=-1)  # shape (num_edges, 2)
 
         #add original paper observation features: ops_duration, est and lst for each operation
+
+        empty_space_left = state.critical_block_info[:, 8]
+        empty_space_right = state.critical_block_info[:, 9]
+        empty_space_left_plus_source_target = jnp.concatenate([jnp.array([0.0]), empty_space_left, jnp.array([0.0])])
+        empty_space_right_plus_source_target = jnp.concatenate([jnp.array([0.0]), empty_space_right, jnp.array([0.0])])
         observation_features = jnp.stack([
             jnp.pad(state.ops_durations.reshape(-1), (1, 1), mode='constant', constant_values=0),
             state.est,
             state.lst,
-            state.critical_block_info[:, 8], #left empty space
-            state.critical_block_info[:, 9], #right empty space
-        ], axis=-1) #shape (max_num_ops*max_num_jobs + 2, 3)
+            empty_space_left_plus_source_target,
+            empty_space_right_plus_source_target
+        ], axis=-1) #shape (max_num_ops*max_num_jobs + 2, 5)
 
         #Where ops_durations is -1, mask to zero
         observation_features = jnp.where(observation_features[:, 0].reshape(-1, 1) == -1, jnp.array([-1, 0, 0]), observation_features)
