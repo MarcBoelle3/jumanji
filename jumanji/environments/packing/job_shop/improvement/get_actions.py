@@ -569,7 +569,7 @@ def get_action_mask_n6(
     left_end_precedence_ok = jnp.where(mask_no_predecessor_current_op | mask_no_successor_left_end, True, left_end_precedence_ok)
 
     #check also that est of machine successor of left end is after est of job predecessor of current operation
-    machine_successor_of_left_end_idx = critical_block_info[left_end_idx, CBFields.RIGHT_NEIGHBOR]
+    machine_successor_of_left_end_idx = critical_block_info[left_end_idx, CBFields.RIGHT_NEIGHBOR].astype(jnp.int32)
     est_machine_successor_of_left_end_idx = est[machine_successor_of_left_end_idx+1] #+1 to have the correct operation index (due to source in est)
     left_end_precedence_ok = left_end_precedence_ok & ((est_predecessor_of_current_op_idx <= est_machine_successor_of_left_end_idx) | mask_no_predecessor_current_op)
 
@@ -619,8 +619,8 @@ def select_operations_to_switch(
     # of the critical block.
     neighbor_idx = jnp.where(
         neighborhood == 5,
-        critical_block_info[chosen_op_idx, CBFields.LEFT_NEIGHBOR + left_or_right],
-        critical_block_info[chosen_op_idx, CBFields.LEFT_END + left_or_right],
+        critical_block_info[chosen_op_idx, CBFields.LEFT_NEIGHBOR + left_or_right].astype(jnp.int32),
+        critical_block_info[chosen_op_idx, CBFields.LEFT_END + left_or_right].astype(jnp.int32),
     )
 
     # If left neighbor, return [neighbor_idx, chosen_op_idx] to maintain i before j convention
