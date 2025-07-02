@@ -552,7 +552,7 @@ def get_action_mask_n6(
     right_end_precedence_ok = jnp.where(mask_no_predecessor_right_end | mask_no_successor_current_op, True, right_end_precedence_ok)
 
     #check also that est of machine predecessor of right end is before est of job successor of current operation
-    machine_predecessor_of_right_end_idx = critical_block_info[right_end_idx, CBFields.LEFT_NEIGHBOR]
+    machine_predecessor_of_right_end_idx = critical_block_info[right_end_idx, CBFields.LEFT_NEIGHBOR].astype(jnp.int32)
     est_machine_predecessor_of_right_end_idx = est[machine_predecessor_of_right_end_idx+1] #+1 to have the correct operation index (due to source in est)
     right_end_precedence_ok = right_end_precedence_ok & ((est_machine_predecessor_of_right_end_idx <= est_successor_of_current_op) | mask_no_successor_current_op)
 
