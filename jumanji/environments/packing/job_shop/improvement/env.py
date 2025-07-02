@@ -314,7 +314,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         )
         # reward = state.makespan - makespan
 
-        action_mask, critical_block_info = self._create_action_mask(
+        action_mask, critical_block_info, gap_left_right = self._create_action_mask(
             est, lst, new_adj_mat_mc, state.ops_durations, state.num_ops_per_job
         )
         # Check if there are any valid actions in the action mask
@@ -340,6 +340,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             action_mask=action_mask,
             operation_pairs_mask=operation_pairs_mask,
             critical_block_info=critical_block_info,
+            gap_left_right=gap_left_right,
             est=est,
             lst=lst,
             key=state.key,
@@ -384,7 +385,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
     ) -> Tuple[chex.Array, chex.Array]:
         """Create the action mask corresponding to N5 neighborhood."""
 
-        critical_block_info = get_critical_operations_plus_empty_space_left_right(
+        critical_block_info, gap_left_right = get_critical_operations_plus_empty_space_left_right(
             est,
             lst,
             adj_mat_mc,
@@ -399,7 +400,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             lambda x: get_action_mask_n6(x, self.max_num_ops, est, num_ops_per_job),
             critical_block_info
         )
-        return action_mask, critical_block_info
+        return action_mask, critical_block_info, gap_left_right
 
     def _observation_from_state(self, state: ImprovementState) -> Observation:
         """Converts a job shop environment state to an observation.
@@ -421,8 +422,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         #add original paper observation features: ops_duration, est and lst for each operation
 
-        empty_space_left = state.critical_block_info[:, 8]
-        empty_space_right = state.critical_block_info[:, 9]
+        empty_space_left = state.gap_left_right[:, 0]
+        empty_space_right = state.gap_left_right[:, 1]
         empty_space_left_plus_source_target = jnp.concatenate([jnp.array([0.0]), empty_space_left, jnp.array([0.0])])
         empty_space_right_plus_source_target = jnp.concatenate([jnp.array([0.0]), empty_space_right, jnp.array([0.0])])
         observation_features = jnp.stack([

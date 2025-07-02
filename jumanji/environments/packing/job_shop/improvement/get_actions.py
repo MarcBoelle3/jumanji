@@ -1,3 +1,4 @@
+
 # Copyright 2022 InstaDeep Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -209,7 +210,6 @@ def get_critical_operations(
 
     return final_critical_block_info
 
-
 def get_critical_operations_plus_empty_space_left_right(
     est: chex.Array,
     lst: chex.Array,
@@ -390,8 +390,8 @@ def get_critical_operations_plus_empty_space_left_right(
 
     # AAADDED FOR MORE NODE FEATURES
     # Calcul du gap pour chaque edge machine valide (sender -> receiver)
-    end_sender = est[safe_senders_dummy_last] + ops_durations[safe_senders_dummy_last]
-    start_receiver = est[safe_receivers_dummy_last]
+    end_sender = jnp.where(ops_durations[safe_senders_dummy_last] != -1, est[safe_senders_dummy_last] + ops_durations[safe_senders_dummy_last], 0)
+    start_receiver = jnp.where(ops_durations[safe_receivers_dummy_last] != -1, est[safe_receivers_dummy_last], 0)
     gaps = start_receiver - end_sender  # shape (max_num_edges,)
 
     num_ops = num_ops_total
@@ -416,15 +416,12 @@ def get_critical_operations_plus_empty_space_left_right(
     gap_left = jnp.where(starting_ops, est, gap_left)
     gap_right = jnp.where(ending_ops, makespan - (est + ops_durations), gap_right)
 
-    #remove for non-existing operations (in the test it was -inf)
-    gap_left = jnp.where(ops_durations == -1, -1.0, gap_left)
-    gap_right = jnp.where(ops_durations == -1, -1.0, gap_right)
     # Concaténer à critical_block_info (en ajoutant 2 colonnes)
-    final_critical_block_info = jnp.concatenate(
-        [final_critical_block_info, gap_left[:, None], gap_right[:, None]], axis=-1
+    gap_left_right = jnp.concatenate(
+        [gap_left[:, None], gap_right[:, None]], axis=-1
     )
 
-    return final_critical_block_info
+    return final_critical_block_info, gap_left_right
 
 
 def get_action_mask_n5(critical_block_info: chex.Array, max_num_ops: int) -> chex.Array:
@@ -439,9 +436,9 @@ def get_action_mask_n5(critical_block_info: chex.Array, max_num_ops: int) -> che
     num_ops_total = critical_block_info.shape[0]
 
     # Extract left and right ends of critical blocks
-    is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH].astype(jnp.bool_)
-    is_left_end = critical_block_info[:, CBFields.IS_LEFT].astype(jnp.bool_)
-    is_right_end = critical_block_info[:, CBFields.IS_RIGHT].astype(jnp.bool_)
+    is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH]
+    is_left_end = critical_block_info[:, CBFields.IS_LEFT]
+    is_right_end = critical_block_info[:, CBFields.IS_RIGHT]
 
     # Mask operations that are both left and right ends
     # (1 operation per critical block, no possible action)
@@ -494,7 +491,7 @@ def get_action_mask_n6(
 
     # === 2. Extraire les informations de base des blocs ===
     is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH].astype(jnp.bool_)
-    block_ids = critical_block_info[:, CBFields.BLOCK_ID].astype(jnp.int32)
+    block_ids = critical_block_info[:, CBFields.BLOCK_ID]
 
     # === 3. Calculer num_segments de manière 100% STATIQUE ===
     # On utilise SEULEMENT les arguments statiques pour cette valeur critique.
@@ -538,7 +535,7 @@ def get_action_mask_n6(
 
     # Check that est of job-successor of operation is after est of predecessor of neighbor operation
     #for right move
-    right_end_idx = critical_block_info[:, CBFields.RIGHT_END].astype(jnp.int32)
+    right_end_idx = critical_block_info[:, CBFields.RIGHT_END]
     mask_no_predecessor_right_end = right_end_idx % max_num_ops == 0
     predecessor_of_right_end_idx = right_end_idx - 1 
     est_predecessor_of_right_end_idx = est[predecessor_of_right_end_idx+1] #+1 to have the correct operation index (due to source in est)
@@ -552,12 +549,12 @@ def get_action_mask_n6(
     right_end_precedence_ok = jnp.where(mask_no_predecessor_right_end | mask_no_successor_current_op, True, right_end_precedence_ok)
 
     #check also that est of machine predecessor of right end is before est of job successor of current operation
-    machine_predecessor_of_right_end_idx = critical_block_info[right_end_idx, CBFields.LEFT_NEIGHBOR].astype(jnp.int32)
+    machine_predecessor_of_right_end_idx = critical_block_info[right_end_idx, CBFields.LEFT_NEIGHBOR]
     est_machine_predecessor_of_right_end_idx = est[machine_predecessor_of_right_end_idx+1] #+1 to have the correct operation index (due to source in est)
     right_end_precedence_ok = right_end_precedence_ok & ((est_machine_predecessor_of_right_end_idx <= est_successor_of_current_op) | mask_no_successor_current_op)
 
     #for left move
-    left_end_idx = critical_block_info[:, CBFields.LEFT_END].astype(jnp.int32)
+    left_end_idx = critical_block_info[:, CBFields.LEFT_END]
     mask_no_successor_left_end = left_end_idx % max_num_ops == num_ops_per_job[left_end_idx//max_num_ops]-1 # relative position to the job =? last one in the job
     successor_of_left_end_idx = left_end_idx + 1
     successor_of_left_end_idx = jnp.where(mask_no_successor_left_end, -1, successor_of_left_end_idx)
@@ -569,7 +566,7 @@ def get_action_mask_n6(
     left_end_precedence_ok = jnp.where(mask_no_predecessor_current_op | mask_no_successor_left_end, True, left_end_precedence_ok)
 
     #check also that est of machine successor of left end is after est of job predecessor of current operation
-    machine_successor_of_left_end_idx = critical_block_info[left_end_idx, CBFields.RIGHT_NEIGHBOR].astype(jnp.int32)
+    machine_successor_of_left_end_idx = critical_block_info[left_end_idx, CBFields.RIGHT_NEIGHBOR]
     est_machine_successor_of_left_end_idx = est[machine_successor_of_left_end_idx+1] #+1 to have the correct operation index (due to source in est)
     left_end_precedence_ok = left_end_precedence_ok & ((est_predecessor_of_current_op_idx <= est_machine_successor_of_left_end_idx) | mask_no_predecessor_current_op)
 
@@ -619,8 +616,8 @@ def select_operations_to_switch(
     # of the critical block.
     neighbor_idx = jnp.where(
         neighborhood == 5,
-        critical_block_info[chosen_op_idx, CBFields.LEFT_NEIGHBOR + left_or_right].astype(jnp.int32),
-        critical_block_info[chosen_op_idx, CBFields.LEFT_END + left_or_right].astype(jnp.int32),
+        critical_block_info[chosen_op_idx, CBFields.LEFT_NEIGHBOR + left_or_right],
+        critical_block_info[chosen_op_idx, CBFields.LEFT_END + left_or_right],
     )
 
     # If left neighbor, return [neighbor_idx, chosen_op_idx] to maintain i before j convention

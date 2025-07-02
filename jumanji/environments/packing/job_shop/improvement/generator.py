@@ -24,7 +24,7 @@ from jumanji.environments.packing.job_shop.improvement.compute_makespan import (
 )
 from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_action_mask_n5,
-    get_critical_operations,
+    get_critical_operations_plus_empty_space_left_right,
     fully_convert_to_operation_pairs_N5,
     get_action_mask_n6
 )
@@ -184,7 +184,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
         # === Compute action mask ===
 
         # for now: only N5 neighborhood
-        critical_block_info = get_critical_operations(
+        critical_block_info, gap_left_right = get_critical_operations_plus_empty_space_left_right(
             est, lst, adj_mat_mc, ops_durations, self.max_num_jobs, self.max_num_ops, max_num_edges
         )
         action_mask = jax.lax.cond(neighborhood == 5, 
@@ -210,6 +210,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
             key=key,
             action_mask=action_mask,
             critical_block_info=critical_block_info,
+            gap_left_right=gap_left_right,
             est=est,
             lst=lst,
             operation_pairs_mask=operation_pairs_mask,
