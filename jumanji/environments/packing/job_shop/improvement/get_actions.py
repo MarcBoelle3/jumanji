@@ -210,6 +210,223 @@ def get_critical_operations(
     return final_critical_block_info
 
 
+def get_critical_operations_plus_empty_space_left_right(
+    est: chex.Array,
+    lst: chex.Array,
+    adj_mat_mc: chex.Array,
+    ops_durations: chex.Array,
+    max_num_jobs: jnp.int32,
+    max_num_ops: jnp.int32,
+    max_num_edges: jnp.int32,
+) -> chex.Array:
+    """Get operations that are on the critical path, based on the earliest and latest start time
+    of each operation. Critical operations have the property that est[op] == lst[op], ie they
+    cannot be moved in time without changing the makespan.
+
+    Args:
+        est: array of earliest start times, shape (max_num_jobs * max_num_ops + 2,) including
+             source and target nodes
+        lst: array of latest start times, shape (max_num_jobs * max_num_ops + 2,) including
+             source and target nodes
+        adj_mat_mc: adjacency matrix of the machine constraint graph,
+                    shape (max_num_jobs * max_num_ops + 2, max_num_jobs * max_num_ops + 2)
+        ops_durations: array of operation durations, shape (max_num_jobs * max_num_ops,)
+
+    Returns:
+        Array of indices of critical operations of shape (num_ops_total, 8), see CBFields.
+    """
+    num_ops_total = max_num_ops * max_num_jobs
+
+    # Drop source and target nodes
+    makespan = est[-1]
+    est = est[1:-1]
+    lst = lst[1:-1]
+
+    # Find operations where est == lst
+    critical_mask = jnp.isclose(est, lst)
+
+    # Get machine constraints adjacency matrix without source/target nodes
+    adj_mat_mc_ops = adj_mat_mc[1:-1, 1:-1]
+
+    ops_durations = ops_durations.reshape(-1)  # flatten ops_durations
+
+    # Create adjacency matrix of critical operations
+    senders, receivers = jnp.nonzero(
+        adj_mat_mc_ops > 0, size=max_num_edges, fill_value=-1
+    )  # shape (max_num_edges,) for senders and receivers
+
+    # Create a mask to filter out dummy edges (where indices are -1)
+    valid_pairs = jnp.logical_and(senders != -1, receivers != -1)
+    # Replace invalid indices with a safe default (e.g., 0) to avoid out-of-bounds access
+    # These will be ignored later thanks to the valid_pairs mask
+    safe_senders = jnp.where(valid_pairs, senders, 0)
+    safe_receivers = jnp.where(valid_pairs, receivers, 0)
+
+    #add dummy last operation
+    safe_senders_dummy_last = jnp.where(valid_pairs, senders, -1)
+    safe_receivers_dummy_last = jnp.where(valid_pairs, receivers, -1)
+
+    # Check whether both operations are marked as critical
+    is_critical_pair = jnp.logical_and(critical_mask[safe_senders], critical_mask[safe_receivers])
+
+    # Check if the operations are adjacent in time (finish of one == start of the next)
+    is_adjacent = jnp.isclose(est[safe_senders] + ops_durations[safe_senders], est[safe_receivers])
+
+    # A pair is part of a critical block if:
+    # (1) both ops are valid (not padded),
+    # (2) both are on the critical path,
+    # (3) they are adjacent in time.
+    critical_blocks_mask = jnp.logical_and(
+        valid_pairs, jnp.logical_and(is_critical_pair, is_adjacent)
+    )  # shape (max_num_edges,)
+    senders = jnp.where(critical_blocks_mask, senders, -1)
+    receivers = jnp.where(critical_blocks_mask, receivers, -1)
+
+    # Sort pairs by earliest start time, with +inf for non-critical pairs
+    filtered_est = jnp.where(critical_blocks_mask, est[senders], jnp.inf)  # shape (max_num_edges,)
+    sorted_est = jnp.argsort(filtered_est)
+    critical_block_pairs = jnp.stack(
+        [senders[sorted_est], receivers[sorted_est]], axis=-1
+    )  # shape (max_num_edges, 2)
+
+    # === Initialize critical_block_info ===
+
+    # critical_block_info is a matrix of shape (num_ops_total, 8) containing:
+    # (is_on_critical_path, num_critical_block, is_left, is_right, left_neighbor, right_neighbor,
+    # left_end, right_end)
+
+    critical_block_info = jnp.zeros((num_ops_total, 8), dtype=jnp.int32)
+
+    # Set is_on_critical_path
+    critical_block_info = critical_block_info.at[:, CBFields.IS_ON_CRITICAL_PATH].set(critical_mask)
+    # Each operation initially defines its own critical block,
+    # set up num_critical_block and left_end accordingly (updated during scan)
+    critical_block_info = critical_block_info.at[:, CBFields.BLOCK_ID].set(
+        jnp.arange(num_ops_total)
+    )
+    critical_block_info = critical_block_info.at[:, CBFields.LEFT_END].set(
+        jnp.arange(num_ops_total)
+    )
+    # All ops are initially marked as right ends (updated during scan)
+    critical_block_info = critical_block_info.at[:, CBFields.IS_RIGHT].set(1)
+    # Initialize neighbors and right_end to -1
+    critical_block_info = critical_block_info.at[:, CBFields.LEFT_NEIGHBOR].set(-1)
+    critical_block_info = critical_block_info.at[:, CBFields.RIGHT_NEIGHBOR].set(-1)
+    critical_block_info = critical_block_info.at[:, CBFields.RIGHT_END].set(-1)
+
+    # Initialize right_end_array to -1
+    # Right end array is used to
+    right_end_array = jnp.full(num_ops_total, -1, dtype=jnp.int32)
+
+    def cond_fun(loop_state: Tuple[jnp.int32, Tuple[chex.Array, chex.Array]]) -> jnp.bool_:
+        """Condition function for the while loop.
+        The iteration stops when we have processed all the valid critical block pairs (i.e.
+        while start_idx and end_idx are both not -1).
+        """
+        i, _ = loop_state
+        start_idx, end_idx = critical_block_pairs[i]
+        return jnp.logical_and(i < num_ops_total, jnp.logical_and(start_idx != -1, end_idx != -1))
+
+    def body_fun(
+        loop_state: Tuple[jnp.int32, Tuple[chex.Array, chex.Array]],
+    ) -> Tuple[jnp.int32, Tuple[chex.Array, chex.Array]]:
+        """Update the critical block information based on the critical block pair.
+           During one update, if the pair (start_idx, end_idx) is valid, we update the
+           critical block information as follows:
+           - num_critical_block of end_idx is set to the block_id of the start_idx operation.
+           - left_end of end_idx is set to left_end of start_idx.
+           - is_right of start_idx is set to 0.
+           - right_neighbor of start_idx is set to the end_idx operation.
+           - is_left of end_idx is set to 0.
+           - left_neighbor of end_idx is set to the start_idx operation.
+
+        Args:
+            loop_state: Tuple containing (i, (critical_block_info, right_end_array))
+                   with i being the current index in the critical_block_pairs array
+
+        Returns:
+            Tuple containing (updated critical_block_info, updated right_end_array)
+        """
+        i, (critical_block_info, right_end_array) = loop_state
+        start_idx, end_idx = critical_block_pairs[i]
+
+        block_id = critical_block_info[start_idx, 1]
+        left_end_of_start_idx = critical_block_info[start_idx, 6]
+
+        critical_block_info = (
+            critical_block_info.at[end_idx, CBFields.BLOCK_ID]
+            .set(block_id)
+            .at[start_idx, CBFields.IS_RIGHT]
+            .set(0)
+            .at[start_idx, CBFields.RIGHT_NEIGHBOR]
+            .set(end_idx)
+            .at[end_idx, CBFields.LEFT_NEIGHBOR]
+            .set(start_idx)
+            .at[end_idx, CBFields.LEFT_END]
+            .set(left_end_of_start_idx)
+        )
+
+        right_end_array = right_end_array.at[block_id].set(end_idx)
+
+        return (i + 1, (critical_block_info, right_end_array))
+
+    init_state = (0, (critical_block_info, right_end_array))
+
+    _, (final_critical_block_info, right_end_array) = jax.lax.while_loop(
+        cond_fun, body_fun, init_state
+    )
+
+    # Set right_end of each operation to the right_end of its critical block
+    block_ids = final_critical_block_info[:, 1]
+    right_ends = jnp.where(block_ids != -1, right_end_array[block_ids], -1)
+    final_critical_block_info = final_critical_block_info.at[:, CBFields.RIGHT_END].set(right_ends)
+
+    # For each critical block, find left operations.
+    # Due to the initialization of num_critical_block, the left operation are the ones
+    # with index equal to num_critical_block.
+    final_critical_block_info = final_critical_block_info.at[:, CBFields.IS_LEFT].set(
+        final_critical_block_info[:, CBFields.BLOCK_ID] == jnp.arange(num_ops_total)
+    )
+
+    # AAADDED FOR MORE NODE FEATURES
+    # Calcul du gap pour chaque edge machine valide (sender -> receiver)
+    end_sender = est[safe_senders_dummy_last] + ops_durations[safe_senders_dummy_last]
+    start_receiver = est[safe_receivers_dummy_last]
+    gaps = start_receiver - end_sender  # shape (max_num_edges,)
+
+    num_ops = num_ops_total
+
+    # Initialiser arrays gap_left et gap_right avec -1
+    gap_left = jnp.full(num_ops, -1.0) #count dummy first operation
+    gap_right = jnp.full(num_ops, -1.0) #count dummy first operation
+
+    # Pour chaque receiver, stocker gap avec son sender (gap_left)
+    gap_left = gap_left.at[safe_receivers_dummy_last].set(
+        gaps
+    )
+    # Pour chaque sender, stocker gap avec son receiver (gap_right)
+    gap_right = gap_right.at[safe_senders_dummy_last].set(
+        gaps
+    )
+
+    starting_ops = jnp.logical_and(gap_left == -1.0, gap_right != -1.0)
+    ending_ops = jnp.logical_and(gap_left != -1.0, gap_right == -1.0)
+
+    #fill gap_left and gap_right with the correct gap
+    gap_left = jnp.where(starting_ops, est, gap_left)
+    gap_right = jnp.where(ending_ops, makespan - (est + ops_durations), gap_right)
+
+    #remove for non-existing operations (in the test it was -inf)
+    gap_left = jnp.where(ops_durations == -1, -1.0, gap_left)
+    gap_right = jnp.where(ops_durations == -1, -1.0, gap_right)
+    # Concaténer à critical_block_info (en ajoutant 2 colonnes)
+    final_critical_block_info = jnp.concatenate(
+        [final_critical_block_info, gap_left[:, None], gap_right[:, None]], axis=-1
+    )
+
+    return final_critical_block_info
+
+
 def get_action_mask_n5(critical_block_info: chex.Array, max_num_ops: int) -> chex.Array:
     """Get the mask of valid actions for the N5 neighborhood.
 

@@ -32,6 +32,7 @@ from jumanji.environments.packing.job_shop.improvement.generator import (
 from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_action_mask_n5,
     get_critical_operations,
+    get_critical_operations_plus_empty_space_left_right,
     select_operations_to_switch,
     fully_convert_to_operation_pairs_N5,
     get_action_mask_n6
@@ -99,7 +100,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         # Initialize reward parameters
         self.reward_type = reward_type
         self.reward_scale = reward_scale
-        
+
         super().__init__()
 
         # Create viewer used for rendering
@@ -176,7 +177,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             name="action_mask",
         )
         observation_features = specs.Array(
-            shape=(self.max_num_jobs * self.max_num_ops + 2, 3),
+            shape=(self.max_num_jobs * self.max_num_ops + 2, 5),
             dtype=jnp.float32,
             name="observation_features",
         )
@@ -383,7 +384,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
     ) -> Tuple[chex.Array, chex.Array]:
         """Create the action mask corresponding to N5 neighborhood."""
 
-        critical_block_info = get_critical_operations(
+        critical_block_info = get_critical_operations_plus_empty_space_left_right(
             est,
             lst,
             adj_mat_mc,
@@ -423,6 +424,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             jnp.pad(state.ops_durations.reshape(-1), (1, 1), mode='constant', constant_values=0),
             state.est,
             state.lst,
+            state.critical_block_info[:, 8], #left empty space
+            state.critical_block_info[:, 9], #right empty space
         ], axis=-1) #shape (max_num_ops*max_num_jobs + 2, 3)
 
         #Where ops_durations is -1, mask to zero
@@ -430,9 +433,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         #Normalize observation features: divide duration by 99, est and lst by 1000, as in the paper
 
-        observation_features = observation_features.at[:, 0].divide(99.0)
-        observation_features = observation_features.at[:, 1:].divide(1000.0)
-
+        # observation_features = observation_features.at[:, 0].divide(99.0)
+        # observation_features = observation_features.at[:, 1:].divide(1000.0)
+        observation_features = observation_features.at[:, 0].divide(6.0)
+        observation_features = observation_features.at[:, 1:3].divide(60.0)
+        observation_features = observation_features.at[:, 3:5].divide(6.0)
         return Observation(
             ops_machine_ids=state.ops_machine_ids,
             ops_durations=state.ops_durations,
