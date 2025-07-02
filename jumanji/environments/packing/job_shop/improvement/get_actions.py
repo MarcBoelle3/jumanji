@@ -494,7 +494,7 @@ def get_action_mask_n6(
 
     # === 2. Extraire les informations de base des blocs ===
     is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH].astype(jnp.bool_)
-    block_ids = critical_block_info[:, CBFields.BLOCK_ID]
+    block_ids = critical_block_info[:, CBFields.BLOCK_ID].astype(jnp.int32)
 
     # === 3. Calculer num_segments de manière 100% STATIQUE ===
     # On utilise SEULEMENT les arguments statiques pour cette valeur critique.
@@ -538,7 +538,7 @@ def get_action_mask_n6(
 
     # Check that est of job-successor of operation is after est of predecessor of neighbor operation
     #for right move
-    right_end_idx = critical_block_info[:, CBFields.RIGHT_END]
+    right_end_idx = critical_block_info[:, CBFields.RIGHT_END].astype(jnp.int32)
     mask_no_predecessor_right_end = right_end_idx % max_num_ops == 0
     predecessor_of_right_end_idx = right_end_idx - 1 
     est_predecessor_of_right_end_idx = est[predecessor_of_right_end_idx+1] #+1 to have the correct operation index (due to source in est)
@@ -557,7 +557,7 @@ def get_action_mask_n6(
     right_end_precedence_ok = right_end_precedence_ok & ((est_machine_predecessor_of_right_end_idx <= est_successor_of_current_op) | mask_no_successor_current_op)
 
     #for left move
-    left_end_idx = critical_block_info[:, CBFields.LEFT_END]
+    left_end_idx = critical_block_info[:, CBFields.LEFT_END].astype(jnp.int32)
     mask_no_successor_left_end = left_end_idx % max_num_ops == num_ops_per_job[left_end_idx//max_num_ops]-1 # relative position to the job =? last one in the job
     successor_of_left_end_idx = left_end_idx + 1
     successor_of_left_end_idx = jnp.where(mask_no_successor_left_end, -1, successor_of_left_end_idx)
