@@ -248,8 +248,7 @@ class FromDataSetScenarioGenerator(ScenarioGenerator):
         ops_durations = self.dataset[self.instance_idx, 0, :, :].astype(jnp.float32)
         #in the original dataset, the machine ids are 1-indexed
         ops_machine_ids = self.dataset[self.instance_idx, 1, :, :].astype(jnp.int32) - 1
-        #NORMALIZE TO 6 the OP_DURATION(model trained with this)
-        ops_durations = ops_durations / self.max_op_duration * 6
+
         # The number of operations for each job is constant (equal to num_machines)
         num_ops_per_job = jnp.sum(ops_machine_ids != -1, axis=1, dtype=jnp.int32)
         
