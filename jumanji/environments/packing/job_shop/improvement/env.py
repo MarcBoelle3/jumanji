@@ -65,7 +65,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         time_limit: int = 500,
         neighborhood: int = 5,
         reward_type: Literal["incumbent", "composed"] = "incumbent",
-        reward_scale: float = 0.3
+        reward_scale: float = 0.3,
+        mask_last_action: bool = False
     ):
         """Initialize the Job Shop Improvement environment.
 
@@ -100,6 +101,9 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         # Initialize reward parameters
         self.reward_type = reward_type
         self.reward_scale = reward_scale
+
+        # Initialize mask last action
+        self.mask_last_action = mask_last_action
 
         super().__init__()
 
@@ -264,24 +268,12 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         """
 
         # Convert action to start, end, move_start_end indices
-        # Neighborhood 5 for the moment
-        #jax.debug.print("iteration: {}", state.step_count)
-        #jax.debug.print("action: {}", action)
         action_ops_pair = select_operations_to_switch(state.critical_block_info, action, neighborhood=self.neighborhood)
-        #jax.debug.print("action_ops_pair: {}", action_ops_pair)
-        # Get number of operations in same critical block as start operation
-        start_op_idx = action_ops_pair[0]
-        critical_block_id = state.critical_block_info[start_op_idx, 1] #1 is block_id
-        number_of_ops_in_cb = jnp.sum(state.critical_block_info[:, 1] == critical_block_id)
-        #jax.debug.print("number_of_ops_in_cb: {}", number_of_ops_in_cb)
+
         # Update graph topology based on action
         new_adj_mat_mc = update_disjunctive_graph(
             state.adj_mat_mc, state.ops_durations, action_ops_pair
         )
-        # Check that new_adj_mat_mc has at most one non-zero coefficient per row
-        num_nonzero_per_row = jnp.sum(new_adj_mat_mc > 0, axis=1)
-        has_valid_adj_mat = jnp.all(num_nonzero_per_row <= 1)
-        #jax.debug.print("has_valid_adj_mat_mc: {}", has_valid_adj_mat)
 
         adj_mat = jnp.maximum(
             state.adj_mat_pc, new_adj_mat_mc
@@ -317,6 +309,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         action_mask, critical_block_info, gap_left_right = self._create_action_mask(
             est, lst, new_adj_mat_mc, state.ops_durations, state.num_ops_per_job
         )
+        
+        # Mask the last action to prevent immediate reversal
+        if self.mask_last_action:
+            action_mask = self._mask_last_action(action_mask, action)
+        
         # Check if there are any valid actions in the action mask
         has_valid_actions = jnp.any(action_mask)
         #jax.debug.print("has_valid_actions: {}", has_valid_actions)
@@ -401,6 +398,26 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             critical_block_info
         )
         return action_mask, critical_block_info, gap_left_right
+
+    def _mask_last_action(self, action_mask: chex.Array, last_action: chex.Array) -> chex.Array:
+        """Mask the last action to prevent immediate reversal.
+        
+        Args:
+            action_mask: Current action mask of shape (max_num_ops * max_num_jobs, 2)
+            last_action: Last action taken, array of shape (2,) with [action_idx, direction]
+            
+        Returns:
+            Updated action mask with last action masked out
+        """
+        action_idx, direction = last_action[0], last_action[1]
+        # Prevent immediate reversal: if last action was direction 0, mask direction 1 and vice versa
+        opposite_direction = 1 - direction
+        # Create a mask that sets the last action to False
+        mask_update = jnp.ones_like(action_mask, dtype=bool)
+        mask_update = mask_update.at[action_idx, opposite_direction].set(False)
+        
+        # Apply the mask
+        return action_mask & mask_update
 
     def _observation_from_state(self, state: ImprovementState) -> Observation:
         """Converts a job shop environment state to an observation.
