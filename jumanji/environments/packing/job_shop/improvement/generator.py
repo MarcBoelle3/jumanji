@@ -30,7 +30,7 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
 )
 from jumanji.environments.packing.job_shop.improvement.types import ImprovementState
 from jumanji.environments.packing.job_shop.types import Scenario
-
+from jumanji.environments.packing.job_shop.improvement.initialization_heuristic_rules import schedule_op_in_earliest_slot
 
 class ScheduleGenerator(abc.ABC):
     """Defines the abstract `ScheduleGenerator` base class. A `ScheduleGenerator` is responsible
@@ -446,7 +446,111 @@ class RandomScheduleGenerator(ScheduleGenerator):
 
         return adj_with_source_target
 
+    def _build_adj_matrix_from_schedule(
+        self,
+        machine_schedule: chex.Array,
+        num_ops_total: int,
+    ) -> chex.Array:
+        """Builds an adjacency matrix from the final machine schedules."""
+        # The correction is here: ensure the matrix is float32.
+        adj_matrix = jnp.zeros((num_ops_total, num_ops_total), dtype=jnp.float32)
 
+        def update_adj_for_machine(machine_idx: int, adj: chex.Array) -> chex.Array:
+            # Create precedence links (op_i -> op_{i+1}) for one machine
+            op_ids = machine_schedule[machine_idx]
+            senders, receivers = op_ids[:-1], op_ids[1:]
+
+            # Ensure links are only made between valid, scheduled operations
+            is_valid_link = (senders != -1) & (receivers != -1)
+            
+            # Set invalid indices to 0 to prevent out-of-bounds access.
+            senders = jnp.where(is_valid_link, senders, 0)
+            receivers = jnp.where(is_valid_link, receivers, 0)
+
+            # Update adj[sender, receiver] = 1. JAX will correctly cast the
+            # integer `is_valid_link` to float for the float32 matrix.
+            return adj.at[senders, receivers].set(is_valid_link.astype(jnp.float32))
+
+        # Loop over all machines to build the full machine-precedence graph
+        adj_matrix_mc = jax.lax.fori_loop(0, self.num_machines, update_adj_for_machine, adj_matrix)
+        return adj_matrix_mc
+
+    def _run_fdd_mwr_simulation(
+        self,
+        ops_machine_ids: chex.Array,
+        ops_durations: chex.Array,
+        fdd: chex.Array,
+    ) -> chex.Array:
+        """Runs an iterative scheduling simulation using the FDD/MWR dispatching rule."""
+        num_ops_total = self.max_num_jobs * self.max_num_ops
+
+        # --- Initial State ---
+        machine_schedule = jnp.full((self.num_machines, num_ops_total), -1, dtype=jnp.int32)
+        start_times = jnp.zeros_like(machine_schedule, dtype=jnp.float32)
+        end_times = jnp.zeros_like(machine_schedule, dtype=jnp.float32)
+        job_predecessor_end_times = jnp.zeros((self.max_num_jobs,), dtype=jnp.float32)
+
+        # The first operation of each job is a candidate
+        candidate_ops = jnp.arange(0, num_ops_total, self.max_num_ops, dtype=jnp.int32)
+        
+        # MWR is the sum of durations for all operations in each job
+        dur_masked = jnp.where(ops_durations == -1, 0, ops_durations)
+        work_remaining = jnp.sum(dur_masked, axis=1)
+
+        init_carry = (machine_schedule, start_times, end_times, job_predecessor_end_times, candidate_ops, work_remaining)
+
+        def has_candidates(carry_state: tuple) -> bool:
+            """Loop continues as long as there are candidate operations."""
+            _, _, _, _, candidates, _ = carry_state
+            return jnp.any(candidates != -1)
+
+        def schedule_next_op(carry_state: tuple) -> tuple:
+            """Schedules one operation based on the FDD/MWR rule."""
+            mch_schedule, start_t, end_t, job_pred_ends, cand_ops, work_rem = carry_state
+
+            # --- FDD/MWR Priority Calculation ---
+            op_rows, op_cols = cand_ops // self.max_num_ops, cand_ops % self.max_num_ops
+            due_dates = fdd[op_rows, op_cols]
+            
+            # Avoid division by zero if work_remaining is 0
+            safe_work_rem = jnp.where(work_rem[op_rows] > 0, work_rem[op_rows], 1e-6)
+            ratios = due_dates / safe_work_rem
+
+            # --- Select and Schedule Best Operation ---
+            priorities = jnp.where(cand_ops != -1, ratios, jnp.inf)
+            best_job_idx = jnp.argmin(priorities)
+            op_id = cand_ops[best_job_idx]
+
+            # Schedule the selected operation in the earliest possible slot on its machine
+            op_row, op_col = op_id // self.max_num_ops, op_id % self.max_num_ops
+            mch_id = ops_machine_ids[op_row, op_col]
+            
+            updated_mch_sched, updated_starts, updated_ends, job_pred_ends = schedule_op_in_earliest_slot(
+                op_id, ops_durations, mch_schedule[mch_id], start_t[mch_id], end_t[mch_id], job_pred_ends, self.max_num_ops
+            )
+
+            # --- Update State ---
+            mch_schedule = mch_schedule.at[mch_id].set(updated_mch_sched)
+            start_t = start_t.at[mch_id].set(updated_starts)
+            end_t = end_t.at[mch_id].set(updated_ends)
+            
+            # Decrease work remaining for the scheduled job
+            duration = ops_durations[op_row, op_col]
+            work_rem = work_rem.at[best_job_idx].add(-duration)
+
+            # Set the next operation in the job as the new candidate
+            num_ops_in_job = jnp.sum(ops_machine_ids[best_job_idx] != -1)
+            is_job_finished = (op_col + 1 >= num_ops_in_job)
+            new_cand_op = jnp.where(is_job_finished, -1, op_id + 1)
+            cand_ops = cand_ops.at[best_job_idx].set(new_cand_op)
+
+            return mch_schedule, start_t, end_t, job_pred_ends, cand_ops, work_rem
+
+        # Run the simulation until all operations are scheduled
+        final_carry = jax.lax.while_loop(has_candidates, schedule_next_op, init_carry)
+        final_machine_schedule = final_carry[0]
+        
+        return final_machine_schedule
 
     def init_adj_mat_mc_with_fdd_mwr(
         self,
@@ -454,90 +558,27 @@ class RandomScheduleGenerator(ScheduleGenerator):
         ops_durations: chex.Array,
     ) -> chex.Array:
         """
-        Generates a machine constraint adjacency matrix based on the FDD/MWR rule:
-        Minimum ratio of Flow Due Date to Most Work Remaining. Operations are
-        prioritized by selecting the minimum ratio of a job's due date to its
-        total remaining processing time.
-
-        Args:
-            ops_machine_ids: Array (max_num_jobs, max_num_ops), -1 for padded operations.
-            ops_durations: Array (max_num_jobs, max_num_ops), -1 for padded operations.
-
-        Returns:
-            A (N+2, N+2) adjacency matrix with machine constraints.
+        Generates a machine constraint adjacency matrix based on the FDD/MWR rule.
+        
+        The priority is `FDD / MWR`, where a lower value is higher priority.
+        - FDD (Flow Due Date): Cumulative processing time up to the current operation.
+        - MWR (Most Work Remaining): Sum of durations of unscheduled operations in the job.
         """
         num_ops_total = self.max_num_jobs * self.max_num_ops
-        adj_mat = jnp.zeros((num_ops_total, num_ops_total), dtype=jnp.float32)
-
-        # State for each machine: [last_op_id, duration_of_last_op]
-        init_machine_ops = -jnp.ones((self.num_machines,), dtype=jnp.int32)
-        init_machine_durs = -jnp.ones((self.num_machines,), dtype=jnp.float32)
-
-        # Initial candidate operations are the first operation of each job
-        init_cand_ops = jnp.arange(0, num_ops_total, self.max_num_ops, dtype=jnp.int32)
         
-        # Initial due dates are the durations of the first operations of each job
-        init_due_dates = ops_durations[:, 0] # can contain -1
-        # Initial work remaining is the sum of all operation durations for each job
-        init_work_remaining = jnp.sum(jnp.where(ops_durations == -1, 0, ops_durations), axis=1)
+        # Pre-calculate FDD for all operations
+        dur_masked = jnp.where(ops_durations == -1, 0, ops_durations)
+        fdd = jnp.cumsum(dur_masked, axis=1)
 
-        def check_remaining_ops(carry):
-            """Continue as long as at least one job has a candidate operation."""
-            _, _, _, cand_ops, _, _ = carry
-            return jnp.any(cand_ops != -1)
+        # 1. Simulate the scheduling process to get the final machine operation order
+        final_schedule = self._run_fdd_mwr_simulation(
+            ops_machine_ids, ops_durations, fdd
+        )
 
-        def schedule_next_op(carry):
-            """Selects and schedules the highest-priority op based on FDD/MWR."""
-            machine_ops, machine_durs, adj, cand_ops, work_remaining, due_dates = carry
-
-            # Update due dates: add duration of cand_ops if it's not padded
-            due_dates = due_dates.at[cand_ops // self.max_num_ops].add(ops_durations[cand_ops // self.max_num_ops, cand_ops % self.max_num_ops])
-
-            # --- Priority Calculation: FDD/MWR Ratio ---
-            # Use a small epsilon for stability if work_remaining could be 0
-            safe_work_remaining = jnp.where(work_remaining > 0, work_remaining, 1e-6)
-            ratios = due_dates / safe_work_remaining
-            
-            # Set priority to infinity for jobs that are already finished
-            priorities = jnp.where(cand_ops != -1, ratios, jnp.inf)
-            
-            # The best job is the one with the minimum FDD/MWR ratio
-            job_id = jnp.argmin(priorities)
-
-            # --- Schedule the selected operation ---
-            op_id = cand_ops[job_id]
-            op_row, op_col = op_id // self.max_num_ops, op_id % self.max_num_ops
-            
-            machine_id = ops_machine_ids[op_row, op_col]
-            duration = ops_durations[op_row, op_col]
-
-            prev_op, prev_duration = machine_ops[machine_id], machine_durs[machine_id]
-            
-            # Add edge if there was a previous operation on this machine
-            adj = jax.lax.cond(
-                prev_op != -1,
-                lambda a: a.at[prev_op, op_id].set(prev_duration),
-                lambda a: a,
-                operand=adj
-            )
-            machine_ops = machine_ops.at[machine_id].set(op_id)
-            machine_durs = machine_durs.at[machine_id].set(duration)
-
-            # --- Update State for the Next Iteration ---
-            work_remaining = work_remaining.at[job_id].add(-duration)
-
-            num_ops_in_job = jnp.sum(ops_machine_ids[job_id] != -1)
-            is_job_finished = (op_col + 1 >= num_ops_in_job)
-            
-            new_cand_op = jnp.where(is_job_finished, -1, op_id + 1)
-            cand_ops = cand_ops.at[job_id].set(new_cand_op)
-
-            return machine_ops, machine_durs, adj, cand_ops, work_remaining, due_dates
-
-        # Run the while loop to build the schedule
-        init_carry = (init_machine_ops, init_machine_durs, adj_mat, init_cand_ops, init_work_remaining, init_due_dates)
-        _, _, final_adj_mat, _, _, _ = jax.lax.while_loop(
-            check_remaining_ops, schedule_next_op, init_carry
+        # 2. Build the adjacency matrix from the resulting schedule
+        adj_matrix = self._build_adj_matrix_from_schedule(
+            final_schedule, num_ops_total
         )
         
-        return jnp.pad(final_adj_mat, ((1, 1), (1, 1)), mode="constant")
+        # 3. Pad for source/sink nodes
+        return jnp.pad(adj_matrix, ((1, 1), (1, 1)))
