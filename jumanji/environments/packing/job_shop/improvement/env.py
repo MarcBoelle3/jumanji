@@ -312,7 +312,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         
         # Mask the last action to prevent immediate reversal
         if self.mask_last_action:
-            action_mask = self._mask_last_action(action_mask, action)
+            action_mask = self._mask_last_action(action_mask, action, action_ops_pair)
         
         # Check if there are any valid actions in the action mask
         has_valid_actions = jnp.any(action_mask)
@@ -399,22 +399,31 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         )
         return action_mask, critical_block_info, gap_left_right
 
-    def _mask_last_action(self, action_mask: chex.Array, last_action: chex.Array) -> chex.Array:
+    def _mask_last_action(self, action_mask: chex.Array, last_action: chex.Array, action_ops_pair: chex.Array) -> chex.Array:
         """Mask the last action to prevent immediate reversal.
         
         Args:
             action_mask: Current action mask of shape (max_num_ops * max_num_jobs, 2)
             last_action: Last action taken, array of shape (2,) with [action_idx, direction]
-            
+            action_ops_pair: Array of shape (2,) with [start_op_idx, end_op_idx]
         Returns:
             Updated action mask with last action masked out
         """
         action_idx, direction = last_action[0], last_action[1]
-        # Prevent immediate reversal: if last action was direction 0, mask direction 1 and vice versa
-        opposite_direction = 1 - direction
-        # Create a mask that sets the last action to False
         mask_update = jnp.ones_like(action_mask, dtype=bool)
-        mask_update = mask_update.at[action_idx, opposite_direction].set(False)
+
+        if self.neighborhood == 6:
+            # Prevent immediate reversal: if last action was direction 0, mask direction 1 and vice versa
+            opposite_direction = 1 - direction
+            # Create a mask that sets the last action to False
+            mask_update = mask_update.at[action_idx, opposite_direction].set(False)
+        
+        elif self.neighborhood == 5:
+            action_start, action_end, _ = action_ops_pair
+            if direction == 0: # action was to move action_end to the left, so the opposite direction is move action_start to the left
+                mask_update = mask_update.at[action_start, 0].set(False)
+            elif direction == 1: # action was to move action_start to the right, so the opposite direction is move action_end to the right
+                mask_update = mask_update.at[action_end, 1].set(False)
         
         # Apply the mask
         return action_mask & mask_update
