@@ -121,20 +121,35 @@ class RandomScenarioGenerator(ScenarioGenerator):
 
     For instances with num_jobs lower than max_num_jobs, the extra jobs are padded with -1."""
 
-    def __init__(self, max_num_jobs: int, max_num_ops: int, max_op_duration: int, hard_num_ops_per_job: bool = False) -> None:
+    def __init__(self, max_num_jobs: int, max_num_ops: int, max_op_duration: int, hard_num_ops_per_job: bool = False, one_op_of_each_job_on_each_machine: bool = False) -> None:
         super().__init__(max_num_jobs, max_num_ops, max_op_duration)
         self.hard_num_ops_per_job = hard_num_ops_per_job
+        self.one_op_of_each_job_on_each_machine = one_op_of_each_job_on_each_machine
+        
+        # Enforce constraint: if one_op_of_each_job_on_each_machine is True, hard_num_ops_per_job must be True
+        if self.one_op_of_each_job_on_each_machine and not self.hard_num_ops_per_job:
+            raise ValueError("If one_op_of_each_job_on_each_machine is True, hard_num_ops_per_job must also be True")
 
     def __call__(self, key: chex.PRNGKey, num_jobs: int, num_machines: int) -> Scenario:
         key, machine_key, duration_key, ops_key = jax.random.split(key, num=4)
 
-        # Randomly sample machine IDs and durations
-        ops_machine_ids = jax.random.randint(
-            machine_key,
-            shape=(self.max_num_jobs, self.max_num_ops),
-            minval=0,
-            maxval=num_machines,
-        )
+        # Generate machine IDs
+        if self.one_op_of_each_job_on_each_machine:
+            # When one_op_of_each_job_on_each_machine is True, we assume num_machines = max_num_ops
+            # Create base machine IDs for permutation (0 to max_num_ops-1)
+            machine_ids_to_permute = jnp.arange(self.max_num_ops)
+            # Generate random permutations for each job
+            permutation_keys = jax.random.split(machine_key, self.max_num_jobs)
+            ops_machine_ids = jax.vmap(jax.random.permutation)(permutation_keys, machine_ids_to_permute)
+        else:
+            # Randomly sample machine IDs
+            ops_machine_ids = jax.random.randint(
+                machine_key,
+                shape=(self.max_num_jobs, self.max_num_ops),
+                minval=0,
+                maxval=num_machines,
+            )
+
         ops_durations = jax.random.randint(
             duration_key,
             shape=(self.max_num_jobs, self.max_num_ops),
