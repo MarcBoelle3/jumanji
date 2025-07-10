@@ -140,7 +140,7 @@ class RandomScenarioGenerator(ScenarioGenerator):
             machine_ids_to_permute = jnp.arange(self.max_num_ops)
             # Generate random permutations for each job
             permutation_keys = jax.random.split(machine_key, self.max_num_jobs)
-            ops_machine_ids = jax.vmap(jax.random.permutation)(permutation_keys, machine_ids_to_permute)
+            ops_machine_ids = jax.vmap(jax.random.permutation, in_axes=(0, None))(permutation_keys, machine_ids_to_permute)
         else:
             # Randomly sample machine IDs
             ops_machine_ids = jax.random.randint(
