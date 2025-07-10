@@ -454,13 +454,6 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         #Where ops_durations is -1, mask to zero
         observation_features = jnp.where(observation_features[:, 0].reshape(-1, 1) == -1, jnp.array([-1, 0, 0, 0, 0]), observation_features)
 
-        #Normalize observation features: divide duration by 99, est and lst by 1000, as in the paper
-
-        # observation_features = observation_features.at[:, 0].divide(99.0)
-        # observation_features = observation_features.at[:, 1:].divide(1000.0)
-        observation_features = observation_features.at[:, 0].divide(6.0)
-        observation_features = observation_features.at[:, 1:3].divide(60.0)
-        observation_features = observation_features.at[:, 3:5].divide(6.0)
         return Observation(
             ops_machine_ids=state.ops_machine_ids,
             ops_durations=state.ops_durations,
