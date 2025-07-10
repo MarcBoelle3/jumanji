@@ -234,7 +234,7 @@ class FromDataSetScenarioGeneratorParallel(ScenarioGenerator):
         """
         del num_jobs, num_machines  # These are determined by the dataset
 
-        instance_idx = key.astype(jnp.int32)
+        instance_idx = key[1].astype(jnp.int32)
 
         # Extract the data for the current instance
         ops_durations = self.dataset[instance_idx, 0, :, :].astype(jnp.float32)
