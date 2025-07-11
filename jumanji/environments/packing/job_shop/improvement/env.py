@@ -420,10 +420,8 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         
         elif self.neighborhood == 5:
             action_start, action_end, _ = action_ops_pair
-            if direction == 0: # action was to move action_end to the left, so the opposite direction is move action_start to the left
-                mask_update = mask_update.at[action_start, 0].set(False)
-            elif direction == 1: # action was to move action_start to the right, so the opposite direction is move action_end to the right
-                mask_update = mask_update.at[action_end, 1].set(False)
+            idx_to_update = (1 - direction) * action_start + direction * action_end
+            mask_update = mask_update.at[idx_to_update, direction].set(False)
         
         # Apply the mask
         return action_mask & mask_update
