@@ -190,6 +190,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             dtype=jnp.bool_,
             name="operation_pairs_mask",
         )
+        num_machines = specs.Array(
+            shape=(),
+            dtype=jnp.int32,
+            name="num_machines",
+        )
         return specs.Spec(
             constructor=Observation,
             name="ObservationSpec",
@@ -202,6 +207,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             action_mask=action_mask,
             observation_features=observation_features,
             operation_pairs_mask=operation_pairs_mask,
+            num_machines=num_machines,
         )
 
     @cached_property
@@ -471,4 +477,5 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             action_mask=state.action_mask,
             operation_pairs_mask=state.operation_pairs_mask,
             observation_features=observation_features,
+            num_machines=self.num_machines,
         )

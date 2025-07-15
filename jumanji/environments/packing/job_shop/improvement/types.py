@@ -44,6 +44,7 @@ class Observation(NamedTuple):
     action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
     observation_features: chex.Array  # (max_num_jobs * max_num_ops, 3)
     operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
+    num_machines: chex.Array  # ()
 
     @property
     def agent_view(self) -> dict:
@@ -55,7 +56,9 @@ class Observation(NamedTuple):
             "operation_pairs_mask": self.operation_pairs_mask,
             "makespan": self.makespan,
             "incumbent_makespan": self.incumbent_makespan,
+            "num_machines": self.num_machines,
         }
+    
 @dataclass
 class ImprovementState(JobShopState):
     """The environment state containing a valid schedule for a given scenario.
