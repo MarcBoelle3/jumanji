@@ -45,7 +45,7 @@ from jumanji.environments.packing.job_shop.scenario_generator import (
     ScenarioGenerator,
 )
 from jumanji.environments.packing.job_shop.viewer import JobShopViewer
-from jumanji.types import TimeStep, restart, termination, transition
+from jumanji.types import TimeStep, restart, termination, transition, truncation
 from jumanji.viewer import Viewer
 
 
@@ -354,10 +354,21 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         done = state.step_count >= self.time_limit
 
-        timestep = jax.lax.cond(
-            done | ~has_valid_actions,
+        branches = [
+            truncation,
             termination,
             transition,
+        ]
+
+        index = jnp.select(
+            [done, ~has_valid_actions],
+            [0, 1],
+            default=2
+        )
+
+        timestep = jax.lax.switch(
+            index,
+            branches,
             reward,
             next_obs,
         )
@@ -411,7 +422,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         Args:
             action_mask: Current action mask of shape (max_num_ops * max_num_jobs, 2)
             last_action: Last action taken, array of shape (2,) with [action_idx, direction]
-            action_ops_pair: Array of shape (2,) with [start_op_idx, end_op_idx]
+            action_ops_pair: Array of shape (3,) with [start_op_idx, end_op_idx, _]
         Returns:
             Updated action mask with last action masked out
         """
@@ -425,8 +436,9 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             mask_update = mask_update.at[action_idx, opposite_direction].set(False)
         
         elif self.neighborhood == 5:
-            action_start, action_end, _ = action_ops_pair
-            idx_to_update = (1 - direction) * action_start + direction * action_end
+            action_start, action_end, _ = action_ops_pair #action_start always before action_end
+            idx_to_update = (1 - direction) * action_start + direction * action_end 
+            #idx_to_update : action_start if direction is 0(left), action_end if direction is 1(right)
             mask_update = mask_update.at[idx_to_update, direction].set(False)
         
         # Apply the mask
