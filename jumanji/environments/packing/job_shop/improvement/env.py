@@ -488,7 +488,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
     def _restart_from_best_solution(self, state: ImprovementState) -> ImprovementState:
         """Restart the state from the best solution found so far."""
         best_sol = state.best_solution_so_far
-        return state._replace(
+        return state.replace(
             scheduled_times=best_sol.scheduled_times,
             adj_mat_pc=best_sol.adj_mat_pc,
             adj_mat_mc=best_sol.adj_mat_mc,
@@ -516,7 +516,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             def improvement_update():
                 """Update best solution and reset counter when improved."""
                 best_solution = self._create_best_solution(new_state)
-                return new_state._replace(
+                return new_state.replace(
                     best_solution_so_far=best_solution,
                     step_since_best=0
                 )
@@ -531,7 +531,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
                 
                 def continue_counting():
                     """Continue counting steps since best."""
-                    return new_state._replace(step_since_best=new_step_since_best)
+                    return new_state.replace(step_since_best=new_step_since_best)
                 
                 # Check if restart is needed
                 return jax.lax.cond(
