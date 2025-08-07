@@ -62,6 +62,20 @@ class Observation(NamedTuple):
         }
     
 @dataclass
+class BestSolution:
+    """Container for storing the best solution found so far."""
+    scheduled_times: chex.Array  # (max_num_jobs, max_num_ops)
+    adj_mat_pc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
+    adj_mat_mc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
+    is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
+    action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
+    operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
+    critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 8)
+    gap_left_right: chex.Array  # (max_num_jobs * max_num_ops, 2)
+    est: chex.Array  # (max_num_jobs * max_num_ops + 2,)
+    lst: chex.Array  # (max_num_jobs * max_num_ops + 2,)
+
+@dataclass
 class ImprovementState(JobShopState):
     """The environment state containing a valid schedule for a given scenario.
 
@@ -91,3 +105,5 @@ class ImprovementState(JobShopState):
     est: chex.Array  # (max_num_jobs * max_num_ops,)
     lst: chex.Array  # (max_num_jobs * max_num_ops,)
     operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
+    best_solution_so_far: BestSolution  # Best solution found so far
+    step_since_best: chex.Numeric  # Steps since last improvement

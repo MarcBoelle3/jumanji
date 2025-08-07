@@ -39,7 +39,7 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
     CBFields
 )
 
-from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Observation
+from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Observation, BestSolution
 from jumanji.environments.packing.job_shop.improvement.update_sol import update_disjunctive_graph
 from jumanji.environments.packing.job_shop.scenario_generator import (
     RandomScenarioGenerator,
@@ -67,14 +67,23 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         neighborhood: int = 5,
         reward_type: Literal["incumbent", "composed"] = "incumbent",
         reward_scale: float = 0.3,
-        mask_last_action: bool = False
+        mask_last_action: bool = False,
+        restart_from_best: bool = False,
+        nb_steps_before_restart: Optional[int] = None
     ):
         """Initialize the Job Shop Improvement environment.
 
         Args:
-            generator: Generator object for creating problem instances.
-            fea_norm_const: Normalization constant for features.
+            scenario_generator: Generator object for creating problem instances.
+            schedule_generator: Generator object for creating initial schedules.
+            viewer: Viewer object for rendering.
             time_limit: Maximum number of steps per episode.
+            neighborhood: Neighborhood type (5 or 6).
+            reward_type: Type of reward calculation ("incumbent" or "composed").
+            reward_scale: Scale factor for composed reward.
+            mask_last_action: Whether to mask the last action to prevent immediate reversal.
+            restart_from_best: Whether to restart from the best solution when stuck.
+            nb_steps_before_restart: Number of steps without improvement before restarting.
         """
 
         self.scenario_generator = scenario_generator or RandomScenarioGenerator(
@@ -105,6 +114,10 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         # Initialize mask last action
         self.mask_last_action = mask_last_action
+
+        # Initialize restart from best parameters
+        self.restart_from_best = restart_from_best & (nb_steps_before_restart is not None)
+        self.nb_steps_before_restart = nb_steps_before_restart
 
         super().__init__()
 
@@ -354,7 +367,13 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             est=est,
             lst=lst,
             key=state.key,
+            best_solution_so_far=state.best_solution_so_far,
+            step_since_best=state.step_since_best,
         )
+
+        # Update restart from best logic
+        improved = makespan < state.incumbent_makespan
+        new_state = self._update_restart_from_best(state, new_state, improved)
 
         # Create observation
         next_obs = self._observation_from_state(new_state)
@@ -450,6 +469,90 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         
         # Apply the mask
         return action_mask & mask_update
+
+    def _create_best_solution(self, state: ImprovementState) -> BestSolution:
+        """Create a BestSolution object from the current state."""
+        return BestSolution(
+            scheduled_times=state.scheduled_times,
+            adj_mat_pc=state.adj_mat_pc,
+            adj_mat_mc=state.adj_mat_mc,
+            is_on_critical_path=state.is_on_critical_path,
+            action_mask=state.action_mask,
+            operation_pairs_mask=state.operation_pairs_mask,
+            critical_block_info=state.critical_block_info,
+            gap_left_right=state.gap_left_right,
+            est=state.est,
+            lst=state.lst,
+        )
+
+    def _restart_from_best_solution(self, state: ImprovementState) -> ImprovementState:
+        """Restart the state from the best solution found so far."""
+        best_sol = state.best_solution_so_far
+        return state._replace(
+            scheduled_times=best_sol.scheduled_times,
+            adj_mat_pc=best_sol.adj_mat_pc,
+            adj_mat_mc=best_sol.adj_mat_mc,
+            is_on_critical_path=best_sol.is_on_critical_path,
+            action_mask=best_sol.action_mask,
+            operation_pairs_mask=best_sol.operation_pairs_mask,
+            critical_block_info=best_sol.critical_block_info,
+            gap_left_right=best_sol.gap_left_right,
+            est=best_sol.est,
+            lst=best_sol.lst,
+            makespan=state.incumbent_makespan,
+            step_since_best=0,
+        )
+
+    def _update_restart_from_best(self, state: ImprovementState, new_state: ImprovementState, improved: bool) -> ImprovementState:
+        """Update the restart from best logic using JAX-compatible operations."""
+        
+        def no_restart_update():
+            """Return new_state unchanged when restart is disabled."""
+            return new_state
+        
+        def restart_enabled_update():
+            """Handle restart logic when enabled."""
+            
+            def improvement_update():
+                """Update best solution and reset counter when improved."""
+                best_solution = self._create_best_solution(new_state)
+                return new_state._replace(
+                    best_solution_so_far=best_solution,
+                    step_since_best=0
+                )
+            
+            def no_improvement_update():
+                """Handle case when no improvement occurred."""
+                new_step_since_best = state.step_since_best + 1
+                
+                def restart_needed():
+                    """Restart from best solution when threshold reached."""
+                    return self._restart_from_best_solution(new_state)
+                
+                def continue_counting():
+                    """Continue counting steps since best."""
+                    return new_state._replace(step_since_best=new_step_since_best)
+                
+                # Check if restart is needed
+                return jax.lax.cond(
+                    new_step_since_best >= self.nb_steps_before_restart,
+                    restart_needed,
+                    continue_counting
+                )
+            
+            # Choose between improvement and no improvement cases
+            return jax.lax.cond(
+                improved,
+                improvement_update,
+                no_improvement_update
+            )
+        
+        # Main conditional: check if restart is enabled
+        return jax.lax.cond(
+            self.restart_from_best,
+            restart_enabled_update,
+            no_restart_update
+        )
 
     def _observation_from_state(self, state: ImprovementState) -> Observation:
         """Converts a job shop environment state to an observation.

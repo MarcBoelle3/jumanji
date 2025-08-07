@@ -28,7 +28,7 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
     fully_convert_to_operation_pairs_N5,
     get_action_mask_n6
 )
-from jumanji.environments.packing.job_shop.improvement.types import ImprovementState
+from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, BestSolution
 from jumanji.environments.packing.job_shop.types import Scenario
 from jumanji.environments.packing.job_shop.improvement.initialization_heuristic_rules import schedule_op_in_earliest_slot
 
@@ -214,6 +214,19 @@ class RandomScheduleGenerator(ScheduleGenerator):
             est=est,
             lst=lst,
             operation_pairs_mask=operation_pairs_mask,
+            best_solution_so_far=BestSolution(
+                scheduled_times=scheduled_times,
+                adj_mat_pc=adj_mat_pc,
+                adj_mat_mc=adj_mat_mc,
+                is_on_critical_path=is_on_critical_path,
+                action_mask=action_mask,
+                operation_pairs_mask=operation_pairs_mask,
+                critical_block_info=critical_block_info,
+                gap_left_right=gap_left_right,
+                est=est,
+                lst=lst,
+            ),
+            step_since_best=jnp.array(0, jnp.int32),
         )
 
         return state
