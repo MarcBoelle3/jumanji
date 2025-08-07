@@ -45,6 +45,7 @@ class Observation(NamedTuple):
     observation_features: chex.Array  # (max_num_jobs * max_num_ops, 3)
     operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
     num_machines: chex.Array  # ()
+    extra_features: chex.Array  # (max_num_ops*max_num_jobs)
 
     @property
     def agent_view(self) -> dict:
@@ -57,6 +58,7 @@ class Observation(NamedTuple):
             "makespan": self.makespan,
             "incumbent_makespan": self.incumbent_makespan,
             "num_machines": self.num_machines,
+            "extra_features": self.extra_features,
         }
     
 @dataclass

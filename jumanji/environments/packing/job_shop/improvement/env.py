@@ -35,7 +35,8 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_critical_operations_plus_empty_space_left_right,
     select_operations_to_switch,
     fully_convert_to_operation_pairs_N5,
-    get_action_mask_n6
+    get_action_mask_n6,
+    CBFields
 )
 
 from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Observation
@@ -195,6 +196,11 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             dtype=jnp.int32,
             name="num_machines",
         )
+        extra_features = specs.Array(
+            shape=(self.max_num_ops * self.max_num_jobs, 3),
+            dtype=jnp.int32,
+            name="extra_features",
+        )
         return specs.Spec(
             constructor=Observation,
             name="ObservationSpec",
@@ -208,6 +214,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             observation_features=observation_features,
             operation_pairs_mask=operation_pairs_mask,
             num_machines=num_machines,
+            extra_features=extra_features,
         )
 
     @cached_property
@@ -478,7 +485,13 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         #Where ops_durations is -1, mask to zero
         observation_features = jnp.where(observation_features[:, 0].reshape(-1, 1) == -1, jnp.array([-1, 0, 0, 0, 0]), observation_features)
-
+        
+        extra_features = jnp.stack([
+            state.critical_block_info[:, CBFields.BLOCK_ID],
+            state.critical_block_info[:, CBFields.IS_LEFT],
+            state.critical_block_info[:, CBFields.IS_RIGHT]
+        ], axis=-1)
+        
         return Observation(
             ops_machine_ids=state.ops_machine_ids,
             ops_durations=state.ops_durations,
@@ -490,4 +503,5 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             operation_pairs_mask=state.operation_pairs_mask,
             observation_features=observation_features,
             num_machines=self.num_machines,
+            extra_features=extra_features,
         )
