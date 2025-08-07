@@ -69,7 +69,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         reward_scale: float = 0.3,
         mask_last_action: bool = False,
         restart_from_best: bool = False,
-        nb_steps_before_restart: Optional[int] = None
+        nb_steps_before_restart: Optional[int] = 50
     ):
         """Initialize the Job Shop Improvement environment.
 
@@ -116,7 +116,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         self.mask_last_action = mask_last_action
 
         # Initialize restart from best parameters
-        self.restart_from_best = restart_from_best & (nb_steps_before_restart is not None)
+        self.restart_from_best = restart_from_best
         self.nb_steps_before_restart = nb_steps_before_restart
 
         super().__init__()
