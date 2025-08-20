@@ -34,7 +34,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
     def __init__(self) -> None:
         super().__init__(num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3)
 
-    def __call__(self, key: PRNGKey, scenario: Scenario, method_id: int) -> ImprovementState:
+    def __call__(self, key: PRNGKey, scenario: Scenario, method_id: int, neighborhood: int = 5) -> ImprovementState:
         """Call method responsible for generating a new state. It returns a job shop scheduling
         instance with a non-optimal valid solution.
 
@@ -42,12 +42,15 @@ class DummyScheduleGenerator(ScheduleGenerator):
             key: jax random key for any stochasticity used in the generation process. Not used
                 in this generator.
             scenario: Scenario object containing the problem definition. Not used in this generator.
+            method_id: Method ID for schedule generation. Not used in this generator.
+            neighborhood: Neighborhood type (5 or 6). Not used in this generator.
         Returns:
             A JobShop State.
         """
         del key
         del scenario
         del method_id
+        del neighborhood
 
         ops_machine_ids = jnp.array(
             [
@@ -63,7 +66,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
                 [2, 1, 4],
                 [4, 3, -1],
             ],
-            jnp.int32,
+            jnp.float32,
         )
 
         scheduled_times = jnp.array(
@@ -72,7 +75,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
                 [3, 5, 9],
                 [5, 9, -1],
             ],
-            jnp.int32,
+            jnp.float32,
         )
 
         num_jobs, max_num_ops = ops_machine_ids.shape
@@ -141,6 +144,27 @@ class DummyScheduleGenerator(ScheduleGenerator):
             ]
         )
 
+        # Add missing fields for ImprovementState
+        gap_left_right = jnp.zeros((9, 2), dtype=jnp.float32)  # (max_num_jobs * max_num_ops, 2)
+        est = jnp.array([0, 0, 3, 6, 3, 5, 9, 5, 9, 0, 0], dtype=jnp.float32)  # (max_num_jobs * max_num_ops + 2,)
+        lst = jnp.array([0, 0, 3, 6, 3, 5, 9, 5, 9, 0, 0], dtype=jnp.float32)  # (max_num_jobs * max_num_ops + 2,)
+        operation_pairs_mask = jnp.zeros((9, 9), dtype=jnp.bool_)  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
+        
+        # Create a dummy best solution
+        from jumanji.environments.packing.job_shop.improvement.types import BestSolution
+        best_solution_so_far = BestSolution(
+            scheduled_times=scheduled_times,
+            adj_mat_pc=adj_mat_pc,
+            adj_mat_mc=adj_mat_mc,
+            is_on_critical_path=is_on_critical_path,
+            action_mask=action_mask,
+            operation_pairs_mask=operation_pairs_mask,
+            critical_block_info=critical_block_info,
+            gap_left_right=gap_left_right,
+            est=est,
+            lst=lst,
+        )
+
         state = ImprovementState(
             ops_machine_ids=ops_machine_ids,
             ops_durations=ops_durations,
@@ -150,10 +174,18 @@ class DummyScheduleGenerator(ScheduleGenerator):
             adj_mat_pc=adj_mat_pc,
             adj_mat_mc=adj_mat_mc,
             makespan=jnp.array(13, jnp.int32),
+            incumbent_makespan=jnp.array(13, jnp.int32),
+            step_minimum=jnp.array(0, jnp.int32),
             is_on_critical_path=is_on_critical_path,
-            key=jax.random.PRNGKey(0),
             action_mask=action_mask,
             critical_block_info=critical_block_info,
+            gap_left_right=gap_left_right,
+            est=est,
+            lst=lst,
+            operation_pairs_mask=operation_pairs_mask,
+            best_solution_so_far=best_solution_so_far,
+            step_since_best=jnp.array(0, jnp.int32),
+            key=jax.random.PRNGKey(0),
         )
 
         return state
