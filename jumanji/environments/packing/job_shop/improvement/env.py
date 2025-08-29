@@ -66,7 +66,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         viewer: Optional[Viewer[ImprovementState]] = None,
         time_limit: int = 500,
         neighborhood: int = 5,
-        reward_type: Literal["incumbent", "composed"] = "incumbent",
+        reward_type: Literal["incumbent", "composed", "local"] = "incumbent",
         reward_scale: float = 0.3,
         mask_last_action: bool = False,
         restart_from_best: bool = False,
@@ -215,6 +215,10 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             dtype=jnp.int32,
             name="extra_features",
         )
+        best_solution_so_far = specs.Spec(
+            constructor=BestSolution,
+            name="BestSolution",
+        )
         return specs.Spec(
             constructor=Observation,
             name="ObservationSpec",
@@ -229,6 +233,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             operation_pairs_mask=operation_pairs_mask,
             num_machines=num_machines,
             extra_features=extra_features,
+            best_solution_so_far=best_solution_so_far,
         )
 
     @cached_property
@@ -306,7 +311,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             state.adj_mat_pc, new_adj_mat_mc
         )  # to handle the case where job and machine constraints are in conflict
         # Compute makespan using forward and backward pass
-        est, lst, makespan = compute_est_lst_makespan(
+        est, lst, new_makespan = compute_est_lst_makespan(
             adj_mat, state.ops_durations, self.max_num_edges
         )
         new_scheduled_times = est[1:-1].reshape(
@@ -322,12 +327,14 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
 
         # Compute reward
         if self.reward_type == "incumbent":
-            reward = jnp.maximum(state.incumbent_makespan - makespan, 0)
+            reward = jnp.maximum(state.incumbent_makespan - new_makespan, 0)
         elif self.reward_type == "composed":
-            reward = jnp.maximum(state.incumbent_makespan - makespan, 0) + self.reward_scale * (state.makespan - makespan)
-        incumbent_makespan = jnp.minimum(state.incumbent_makespan, makespan)
+            reward = jnp.maximum(state.incumbent_makespan - new_makespan, 0) + self.reward_scale * (state.makespan - new_makespan)
+        elif self.reward_type == "local":
+            reward = state.makespan - new_makespan
+        incumbent_makespan = jnp.minimum(state.incumbent_makespan, new_makespan)
         step_minimum = jnp.where(
-            makespan < state.incumbent_makespan,
+            new_makespan < state.incumbent_makespan,
             state.step_count + 1,
             state.step_minimum,
         )
@@ -357,7 +364,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             scheduled_times=new_scheduled_times,
             adj_mat_pc=state.adj_mat_pc,
             adj_mat_mc=new_adj_mat_mc,
-            makespan=makespan,
+            makespan=new_makespan,
             incumbent_makespan=incumbent_makespan,
             step_minimum=step_minimum,
             is_on_critical_path=is_on_critical_path,
@@ -373,7 +380,7 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
         )
 
         # Update restart from best logic
-        improved = makespan <= state.incumbent_makespan
+        improved = new_makespan <= state.incumbent_makespan
 
         if self.restart_from_best:
             new_state = self._update_restart_from_best(new_state, improved)
@@ -551,4 +558,5 @@ class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observatio
             observation_features=observation_features,
             num_machines=self.num_machines,
             extra_features=extra_features,
+            best_solution_so_far=state.best_solution_so_far,
         )
