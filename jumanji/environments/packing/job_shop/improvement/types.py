@@ -23,6 +23,20 @@ else:
 
 from jumanji.environments.packing.job_shop.types import JobShopState
 
+@dataclass
+class BestSolution:
+    """Container for storing the best solution found so far."""
+    scheduled_times: chex.Array  # (max_num_jobs, max_num_ops)
+    adj_mat_pc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
+    adj_mat_mc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
+    is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
+    action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
+    operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
+    critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 8)
+    gap_left_right: chex.Array  # (max_num_jobs * max_num_ops, 2)
+    est: chex.Array  # (max_num_jobs * max_num_ops + 2,)
+    lst: chex.Array  # (max_num_jobs * max_num_ops + 2,)
+
 
 class Observation(NamedTuple):
     """
@@ -46,6 +60,7 @@ class Observation(NamedTuple):
     operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
     num_machines: chex.Array  # ()
     extra_features: chex.Array  # (max_num_ops*max_num_jobs)
+    best_solution_so_far: BestSolution  # Best solution found so far  
 
     @property
     def agent_view(self) -> dict:
@@ -59,21 +74,9 @@ class Observation(NamedTuple):
             "incumbent_makespan": self.incumbent_makespan,
             "num_machines": self.num_machines,
             "extra_features": self.extra_features,
+            "best_solution_so_far": self.best_solution_so_far,
         }
     
-@dataclass
-class BestSolution:
-    """Container for storing the best solution found so far."""
-    scheduled_times: chex.Array  # (max_num_jobs, max_num_ops)
-    adj_mat_pc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
-    adj_mat_mc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
-    is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
-    action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
-    operation_pairs_mask: chex.Array  # (max_num_ops*max_num_jobs, max_num_ops*max_num_jobs)
-    critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 8)
-    gap_left_right: chex.Array  # (max_num_jobs * max_num_ops, 2)
-    est: chex.Array  # (max_num_jobs * max_num_ops + 2,)
-    lst: chex.Array  # (max_num_jobs * max_num_ops + 2,)
 
 @dataclass
 class ImprovementState(JobShopState):
