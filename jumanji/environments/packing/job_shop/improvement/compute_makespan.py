@@ -165,36 +165,25 @@ def compute_earliest_start_times_and_makespan(
         aggregate_edges_for_globals_fn=None,
     )
 
-    def check_completion(graph: jraph.GraphsTuple) -> jnp.bool_:
-        """Check if the target node is completed.
-           Used as a stopping condition in the while loop.
+    def check_completion(state: Tuple[jraph.GraphsTuple, jnp.int32]) -> jnp.bool_:
+        graph, iteration_count = state
+        target_not_completed = graph.nodes[-1, 2] == 1
+        reached_iteration_limit = iteration_count >= num_nodes
+        return jnp.logical_and(target_not_completed, ~reached_iteration_limit)
 
-        Args:
-            graph: Current graph state.
-
-        Returns:
-            True if the target node is completed, False otherwise.
-        """
-        return graph.nodes[-1, 2] == 1
-
-    def update_graph(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
-        """Update the graph using the message passing layer.
-
-        Args:
-            graph: Current graph state.
-
-        Returns:
-            Updated graph state.
-        """
+    def update_graph(
+        state: Tuple[jraph.GraphsTuple, jnp.int32],
+    ) -> Tuple[jraph.GraphsTuple, jnp.int32]:
+        graph, iteration_count = state
         output_graph = net(graph)
-        # Keep source node to (0, 0, 0)
         output_graph = output_graph._replace(
             nodes=output_graph.nodes.at[0].set(jnp.array([0.0, 0.0, 0.0]))
         )
-        return output_graph
+        return output_graph, iteration_count + 1
 
     # Run the message passing loop until the target node is completed
-    output_graph = jax.lax.while_loop(check_completion, update_graph, graph)
+    # output_graph = jax.lax.while_loop(check_completion, update_graph, graph)
+    output_graph, _ = jax.lax.while_loop(check_completion, update_graph, (graph, 0))
 
     # Return earliest start times and makespan
     return output_graph.nodes[:, 1], output_graph.nodes[-1, 1]
@@ -293,36 +282,25 @@ def compute_latest_start_times(
         aggregate_edges_for_globals_fn=None,
     )
 
-    def check_completion(graph: jraph.GraphsTuple) -> jnp.bool_:
-        """Check if the source node is completed.
-           Used as a stopping condition in the while loop.
+    def check_completion(state: Tuple[jraph.GraphsTuple, jnp.int32]) -> jnp.bool_:
+        graph, iteration_count = state
+        source_not_completed = graph.nodes[0, 2] == 1
+        reached_iteration_limit = iteration_count >= num_nodes
+        return jnp.logical_and(source_not_completed, ~reached_iteration_limit)
 
-        Args:
-            graph: Current graph state.
-
-        Returns:
-            True if the source node is completed, False otherwise.
-        """
-        return graph.nodes[0, 2] == 1
-
-    def update_graph(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
-        """Update the graph using the message passing layer.
-
-        Args:
-            graph: Current graph state.
-
-        Returns:
-            Updated graph state.
-        """
+    def update_graph(
+        state: Tuple[jraph.GraphsTuple, jnp.int32],
+    ) -> Tuple[jraph.GraphsTuple, jnp.int32]:
+        graph, iteration_count = state
         output_graph = net(graph)
-        # Keep target node to (0, -makespan, 0)
         output_graph = output_graph._replace(
             nodes=output_graph.nodes.at[-1].set(jnp.array([0.0, -makespan, 0.0]))
         )
-        return output_graph
+        return output_graph, iteration_count + 1
 
-    # Run the message passing loop until the source node is completed
-    output_graph = jax.lax.while_loop(check_completion, update_graph, graph)
+    # Run the message passing loop until the target node is completed
+    # output_graph = jax.lax.while_loop(check_completion, update_graph, graph)
+    output_graph, _ = jax.lax.while_loop(check_completion, update_graph, (graph, 0))
 
     # Return latest start times
     return -output_graph.nodes[:, 1]
@@ -345,4 +323,7 @@ def compute_est_lst_makespan(
 
     est, makespan = compute_earliest_start_times_and_makespan(adj_mat, ops_durations, max_num_edges)
     lst = compute_latest_start_times(adj_mat, ops_durations, makespan, max_num_edges)
+    # Sanitize to -1 for invalid/non-finite values
+    est = jnp.where(jnp.isfinite(est), est, -1)
+    lst = jnp.where(jnp.isfinite(lst), lst, -1)
     return est, lst, makespan
