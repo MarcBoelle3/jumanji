@@ -892,12 +892,27 @@ class TestGetActionMaskN6(TestFixtures):
 class TestSelectOperationsToSwitch(TestFixtures):
     """Test suite for select_operations_to_switch function."""
 
-    def test_n5_operation_selection(
+    @pytest.mark.parametrize(
+        "neighborhood,op_idx,direction,expected_behavior",
+        [
+            # N5 test cases - adjacent swaps within critical blocks
+            (5, 5, 0, "left_neighbor_swap"),  # op 5 moves left, swaps with left neighbor
+            (5, 1, 1, "right_neighbor_swap"),  # op 1 moves right, swaps with right neighbor
+            # N6 test cases - moves to block ends
+            (6, 6, 0, "move_to_left_end"),  # op 6 moves to left end of its block
+            (6, 1, 1, "move_to_right_end"),  # op 1 moves to right end of its block
+        ],
+    )
+    def test_operation_selection(
         self,
+        neighborhood: int,
+        op_idx: int,
+        direction: int,
+        expected_behavior: str,
         simple_job_shop_instance: Tuple[chex.Array, chex.Array, chex.Array, chex.Array],
         computed_schedule_data: Tuple[chex.Array, chex.Array, chex.Array],
     ) -> None:
-        """Test operation selection for N5 neighborhood."""
+        """Test operation selection for both N5 and N6 neighborhoods with parameterized cases."""
         ops_durations, adj_mat_pc, adj_mat_mc, _ = simple_job_shop_instance
         est, lst, _ = computed_schedule_data
 
@@ -911,61 +926,50 @@ class TestSelectOperationsToSwitch(TestFixtures):
             self.MAX_NUM_EDGES,
         )
 
-        # Test left move (direction 0)
-        action = jnp.array([5, 0], dtype=jnp.int32)  # op 5, direction left
-        result = select_operations_to_switch(critical_block_info, action, neighborhood=5)
+        # Create action and get result
+        action = jnp.array([op_idx, direction], dtype=jnp.int32)
+        result = select_operations_to_switch(critical_block_info, action, neighborhood=neighborhood)
 
-        assert result.shape == (3,)
-        # Should return [neighbor_idx, chosen_op_idx, direction]
-        # For left move, neighbor comes before chosen operation
-        assert result[1] == 5  # chosen operation
-        assert result[2] == 0  # direction
+        # Common assertions for all cases
+        assert result.shape == (
+            3,
+        ), f"Result should have 3 elements for {neighborhood} neighborhood"
+        assert (
+            result[2] == direction
+        ), f"Direction should match input for {neighborhood} neighborhood"
 
-        # Test right move (direction 1)
-        action = jnp.array([1, 1], dtype=jnp.int32)  # op 1, direction right
-        result = select_operations_to_switch(critical_block_info, action, neighborhood=5)
+        # Behavior-specific assertions
+        if expected_behavior == "left_neighbor_swap":
+            # N5 left move: swap with left neighbor
+            left_neighbor = critical_block_info[op_idx, CBFields.LEFT_NEIGHBOR]
+            assert result[0] == left_neighbor, "N5 left move should have left neighbor as start_op"
+            assert result[1] == op_idx, "N5 left move should have chosen op as end_op"
 
-        assert result.shape == (3,)
-        assert result[0] == 1  # chosen operation comes first
-        assert result[2] == 1  # direction
+        elif expected_behavior == "right_neighbor_swap":
+            # N5 right move: swap with right neighbor
+            right_neighbor = critical_block_info[op_idx, CBFields.RIGHT_NEIGHBOR]
+            assert result[0] == op_idx, "N5 right move should have chosen op as start_op"
+            assert result[1] == right_neighbor, "N5 right move should have right neighbor as end_op"
 
-    def test_n6_operation_selection(
-        self,
-        simple_job_shop_instance: Tuple[chex.Array, chex.Array, chex.Array, chex.Array],
-        computed_schedule_data: Tuple[chex.Array, chex.Array, chex.Array],
-    ) -> None:
-        """Test operation selection for N6 neighborhood."""
-        ops_durations, adj_mat_pc, adj_mat_mc, _ = simple_job_shop_instance
-        est, lst, _ = computed_schedule_data
+        elif expected_behavior == "move_to_left_end":
+            # N6 left move: move to left end of block
+            left_end_idx = critical_block_info[op_idx, CBFields.LEFT_END]
+            assert result[0] == left_end_idx, "N6 left move should have left end as start_op"
+            assert result[1] == op_idx, "N6 left move should have chosen op as end_op"
 
-        critical_block_info, gap_left_right = get_critical_operations_features(
-            est,
-            lst,
-            adj_mat_mc,
-            ops_durations,
-            self.MAX_NUM_JOBS,
-            self.MAX_NUM_OPS,
-            self.MAX_NUM_EDGES,
-        )
+        elif expected_behavior == "move_to_right_end":
+            # N6 right move: move to right end of block
+            right_end_idx = critical_block_info[op_idx, CBFields.RIGHT_END]
+            assert result[0] == op_idx, "N6 right move should have chosen op as start_op"
+            assert result[1] == right_end_idx, "N6 right move should have right end as end_op"
 
-        # Test moving to left end (direction 0)
-        action = jnp.array([6, 0], dtype=jnp.int32)  # op 6, move to left end
-        result = select_operations_to_switch(critical_block_info, action, neighborhood=6)
+        else:
+            pytest.fail(f"Unknown expected_behavior: {expected_behavior}")
 
-        assert result.shape == (3,)
-        # Should return operation to move to left end of its critical block
-        left_end_idx = critical_block_info[6, CBFields.LEFT_END]
-        assert result[1] == 6  # chosen operation
-        assert result[0] == left_end_idx  # left end of block
-
-        # Test moving to right end (direction 1)
-        action = jnp.array([1, 1], dtype=jnp.int32)  # op 1, move to right end
-        result = select_operations_to_switch(critical_block_info, action, neighborhood=6)
-
-        assert result.shape == (3,)
-        right_end_idx = critical_block_info[1, CBFields.RIGHT_END]
-        assert result[0] == 1  # chosen operation
-        assert result[1] == right_end_idx  # right end of block
+        # Additional validation - operations should be different
+        assert (
+            result[0] != result[1]
+        ), f"Operations to switch should be different for {neighborhood} neighborhood"
 
     def test_jit_compilation(
         self,
