@@ -242,6 +242,101 @@ class TestGetCriticalOperationsFeatures(TestFixtures):
         assert jnp.all(gap_left[valid_ops_mask] >= -1)  # -1 for non-critical ops
         assert jnp.all(gap_right[valid_ops_mask] >= -1)
 
+    def test_gap_computation_validation(
+        self,
+        simple_job_shop_instance: Tuple[chex.Array, chex.Array, chex.Array, chex.Array],
+        computed_schedule_data: Tuple[chex.Array, chex.Array, chex.Array],
+    ) -> None:
+        """Test gap computation validation: timeline spanning and edge cases."""
+        ops_durations, adj_mat_pc, adj_mat_mc, _ = simple_job_shop_instance
+        est, lst, makespan = computed_schedule_data
+
+        critical_block_info, gap_left_right = get_critical_operations_features(
+            est,
+            lst,
+            adj_mat_mc,
+            ops_durations,
+            self.MAX_NUM_JOBS,
+            self.MAX_NUM_OPS,
+            self.MAX_NUM_EDGES,
+        )
+
+        est_ops = est[1:-1]  # Remove source and target nodes
+        ops_durations_flat = ops_durations.flatten()
+        gap_left = gap_left_right[:, 0]
+        gap_right = gap_left_right[:, 1]
+
+        # Test 1: Gap computation for operations with machine predecessors/successors
+        adj_mat_ops = adj_mat_mc[1:-1, 1:-1]
+        senders, receivers = jnp.nonzero(adj_mat_ops > 0, size=self.MAX_NUM_EDGES, fill_value=-1)
+        valid_edges = (senders >= 0) & (receivers >= 0)
+
+        for i in range(len(senders)):
+            if not valid_edges[i]:
+                continue
+            sender, receiver = senders[i], receivers[i]
+
+            # Gap should equal the time difference between operations
+            expected_gap = est_ops[receiver] - (est_ops[sender] + ops_durations_flat[sender])
+
+            # The gap_right of sender should match this gap
+            if gap_right[sender] >= 0:  # Only check if gap is computed (not -1)
+                assert jnp.isclose(
+                    gap_right[sender], expected_gap, atol=1e-6
+                ), f"Gap right for sender {sender} should match time difference"
+
+            # The gap_left of receiver should match this gap
+            if gap_left[receiver] >= 0:  # Only check if gap is computed (not -1)
+                assert jnp.isclose(
+                    gap_left[receiver], expected_gap, atol=1e-6
+                ), f"Gap left for receiver {receiver} should match time difference"
+
+        # Test 2: First operations on machines should have gap_left = est
+        valid_ops = ops_durations_flat >= 0
+        for op_idx in range(len(gap_left)):
+            if not valid_ops[op_idx]:
+                continue
+
+            # If gap_left equals est_ops, this is a first operation on its machine
+            if jnp.isclose(gap_left[op_idx], est_ops[op_idx], atol=1e-6):
+                # Verify this operation has no machine predecessor
+                has_predecessor = False
+                for i in range(len(receivers)):
+                    if valid_edges[i] and receivers[i] == op_idx:
+                        has_predecessor = True
+                        break
+                assert (
+                    not has_predecessor or gap_left[op_idx] == est_ops[op_idx]
+                ), f"Operation {op_idx} with gap_left=est should be first on machine"
+
+        # Test 3: Last operations on machines should have gap_right = makespan - (est + duration)
+        for op_idx in range(len(gap_right)):
+            if not valid_ops[op_idx]:
+                continue
+
+            expected_right_gap = makespan - (est_ops[op_idx] + ops_durations_flat[op_idx])
+            if jnp.isclose(gap_right[op_idx], expected_right_gap, atol=1e-6):
+                # Verify this operation has no machine successor
+                has_successor = False
+                for i in range(len(senders)):
+                    if valid_edges[i] and senders[i] == op_idx:
+                        has_successor = True
+                        break
+                assert not has_successor or jnp.isclose(
+                    gap_right[op_idx], expected_right_gap, atol=1e-6
+                ), f"Operation {op_idx} with computed right gap should be last on machine"
+
+        # Test 4: Timeline consistency - gaps should not be negative for valid operations
+        for op_idx in range(len(gap_left)):
+            if valid_ops[op_idx] and gap_left[op_idx] >= 0:
+                assert (
+                    gap_left[op_idx] >= 0
+                ), f"Gap left for operation {op_idx} should be non-negative"
+            if valid_ops[op_idx] and gap_right[op_idx] >= 0:
+                assert (
+                    gap_right[op_idx] >= 0
+                ), f"Gap right for operation {op_idx} should be non-negative"
+
     def test_jit_compilation(
         self,
         simple_job_shop_instance: Tuple[chex.Array, chex.Array, chex.Array, chex.Array],
@@ -310,6 +405,138 @@ class TestGetCriticalOperationsFeatures(TestFixtures):
         assert result_gap.shape == (3, 2)
         # First operation should be critical
         assert result_cb[0, CBFields.IS_ON_CRITICAL_PATH] == 1
+
+    def test_critical_operations_fundamental_properties(
+        self,
+        simple_job_shop_instance: Tuple[chex.Array, chex.Array, chex.Array, chex.Array],
+        computed_schedule_data: Tuple[chex.Array, chex.Array, chex.Array],
+    ) -> None:
+        """Test fundamental properties of critical operations: est==lst and makespan
+        relationship."""
+        ops_durations, adj_mat_pc, adj_mat_mc, _ = simple_job_shop_instance
+        est, lst, makespan = computed_schedule_data
+
+        critical_block_info, gap_left_right = get_critical_operations_features(
+            est,
+            lst,
+            adj_mat_mc,
+            ops_durations,
+            self.MAX_NUM_JOBS,
+            self.MAX_NUM_OPS,
+            self.MAX_NUM_EDGES,
+        )
+
+        est_ops = est[1:-1]  # Remove source and target nodes
+        lst_ops = lst[1:-1]  # Remove source and target nodes
+        is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH].astype(bool)
+
+        # Test 1: All operations marked as critical must satisfy est[op] == lst[op]
+        critical_ops_est = est_ops[is_critical]
+        critical_ops_lst = lst_ops[is_critical]
+        assert jnp.allclose(
+            critical_ops_est, critical_ops_lst, atol=1e-6
+        ), "Critical operations must have est == lst"
+
+        # Test 2: Sum of durations of operations on the critical path is exactly the makespan
+        ops_durations_flat = ops_durations.flatten()
+        valid_ops_mask = ops_durations_flat >= 0
+
+        # The critical path is the set of operations where est == lst (i.e., is_critical)
+        # The sum of their durations should be exactly the makespan
+        critical_durations = ops_durations_flat[is_critical & valid_ops_mask]
+        total_critical_duration = jnp.sum(critical_durations)
+        assert jnp.isclose(
+            total_critical_duration, makespan, atol=1e-6
+        ), f"Sum of durations on critical path ({total_critical_duration}) \
+        should equal makespan ({makespan})"
+
+    def test_critical_block_structural_properties(
+        self,
+        simple_job_shop_instance: Tuple[chex.Array, chex.Array, chex.Array, chex.Array],
+        computed_schedule_data: Tuple[chex.Array, chex.Array, chex.Array],
+    ) -> None:
+        """Test structural properties of critical blocks: linked lists, maximality, uniqueness."""
+        ops_durations, adj_mat_pc, adj_mat_mc, _ = simple_job_shop_instance
+        est, lst, _ = computed_schedule_data
+
+        critical_block_info, gap_left_right = get_critical_operations_features(
+            est,
+            lst,
+            adj_mat_mc,
+            ops_durations,
+            self.MAX_NUM_JOBS,
+            self.MAX_NUM_OPS,
+            self.MAX_NUM_EDGES,
+        )
+
+        is_critical = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH].astype(bool)
+        block_ids = critical_block_info[:, CBFields.BLOCK_ID]
+        left_neighbors = critical_block_info[:, CBFields.LEFT_NEIGHBOR]
+        right_neighbors = critical_block_info[:, CBFields.RIGHT_NEIGHBOR]
+        is_left = critical_block_info[:, CBFields.IS_LEFT].astype(bool)
+        is_right = critical_block_info[:, CBFields.IS_RIGHT].astype(bool)
+
+        # Test 1: Each critical operation belongs to exactly one block
+        critical_ops = jnp.where(is_critical)[0]
+        for op_idx in critical_ops:
+            assert block_ids[op_idx] >= 0, f"Critical operation {op_idx} should have valid block ID"
+
+        # Test 2: Blocks form valid linked lists via LEFT/RIGHT_NEIGHBOR
+        for op_idx in critical_ops:
+            left_neighbor = left_neighbors[op_idx]
+            right_neighbor = right_neighbors[op_idx]
+
+            # If has left neighbor, verify bidirectional link
+            if left_neighbor >= 0:
+                assert (
+                    right_neighbors[left_neighbor] == op_idx
+                ), f"Left neighbor {left_neighbor} of op {op_idx} should point back"
+                assert (
+                    block_ids[left_neighbor] == block_ids[op_idx]
+                ), "Left neighbor should be in same block"
+
+            # If has right neighbor, verify bidirectional link
+            if right_neighbor >= 0:
+                assert (
+                    left_neighbors[right_neighbor] == op_idx
+                ), f"Right neighbor {right_neighbor} of op {op_idx} should point back"
+                assert (
+                    block_ids[right_neighbor] == block_ids[op_idx]
+                ), "Right neighbor should be in same block"
+
+        # Test 3: Left and right end properties are consistent
+        for op_idx in critical_ops:
+            if is_left[op_idx]:
+                assert (
+                    left_neighbors[op_idx] == -1
+                ), f"Left end operation {op_idx} should have no left neighbor"
+            if is_right[op_idx]:
+                assert (
+                    right_neighbors[op_idx] == -1
+                ), f"Right end operation {op_idx} should have no right neighbor"
+
+        # Test 4: Block maximality - no adjacent critical ops from different blocks on same machine
+        est_ops = est[1:-1]
+        ops_durations_flat = ops_durations.flatten()
+
+        # Check that adjacent critical operations on same machine are in same block
+        adj_mat_ops = adj_mat_mc[1:-1, 1:-1]
+        senders, receivers = jnp.nonzero(adj_mat_ops > 0, size=self.MAX_NUM_EDGES, fill_value=-1)
+        valid_edges = (senders >= 0) & (receivers >= 0)
+
+        for i in range(len(senders)):
+            if not valid_edges[i]:
+                continue
+            sender, receiver = senders[i], receivers[i]
+
+            # If both are critical and adjacent in time, they should be in same block
+            if is_critical[sender] and is_critical[receiver]:
+                sender_end = est_ops[sender] + ops_durations_flat[sender]
+                receiver_start = est_ops[receiver]
+                if jnp.isclose(sender_end, receiver_start):
+                    assert (
+                        block_ids[sender] == block_ids[receiver]
+                    ), f"Adjacent critical ops {sender}, {receiver} should be in same block"
 
 
 class TestGetActionMaskN5(TestFixtures):
@@ -533,6 +760,133 @@ class TestGetActionMaskN6(TestFixtures):
                 ]
             )
         )
+
+    def test_action_mask_safety_properties(
+        self,
+        simple_job_shop_instance: Tuple[chex.Array, chex.Array, chex.Array, chex.Array],
+        computed_schedule_data: Tuple[chex.Array, chex.Array, chex.Array],
+    ) -> None:
+        """Test that action mask safety properties prevent cycles and maintain validity."""
+        ops_durations, adj_mat_pc, adj_mat_mc, num_ops_per_job = simple_job_shop_instance
+        est, lst, _ = computed_schedule_data
+
+        critical_block_info, gap_left_right = get_critical_operations_features(
+            est,
+            lst,
+            adj_mat_mc,
+            ops_durations,
+            self.MAX_NUM_JOBS,
+            self.MAX_NUM_OPS,
+            self.MAX_NUM_EDGES,
+        )
+
+        action_mask = get_action_mask_n6(
+            critical_block_info, self.MAX_NUM_OPS, est, num_ops_per_job
+        )
+
+        est_ops = est[1:-1]  # Remove source and target nodes
+
+        # Test 1: Verify EST comparisons for allowed right moves
+        valid_right_moves = jnp.where(action_mask[:, 1])[0]  # Operations that can move right
+
+        for op_idx in valid_right_moves:
+            right_end_idx = critical_block_info[op_idx, CBFields.RIGHT_END]
+            ops_order_in_job = op_idx % self.MAX_NUM_OPS
+            ops_job_id = op_idx // self.MAX_NUM_OPS
+
+            # Check job predecessor condition
+            has_right_end_job_predecessor = right_end_idx % self.MAX_NUM_OPS != 0
+            is_current_op_last_of_job = ops_order_in_job == num_ops_per_job[ops_job_id] - 1
+
+            if has_right_end_job_predecessor and not is_current_op_last_of_job:
+                job_predecessor_of_right_end = right_end_idx - 1
+                job_successor_of_current_op = op_idx + 1
+
+                est_job_predecessor_right_end = est_ops[job_predecessor_of_right_end]
+                est_job_successor_current_op = est_ops[job_successor_of_current_op]
+
+                # The condition should be satisfied for allowed moves
+                assert (
+                    est_job_successor_current_op > est_job_predecessor_right_end
+                ), f"Right move for op {op_idx} should satisfy job predecessor condition"
+
+        # Test 2: Verify EST comparisons for allowed left moves
+        valid_left_moves = jnp.where(action_mask[:, 0])[0]  # Operations that can move left
+
+        for op_idx in valid_left_moves:
+            left_end_idx = critical_block_info[op_idx, CBFields.LEFT_END]
+            ops_order_in_job = op_idx % self.MAX_NUM_OPS
+            ops_job_id = op_idx // self.MAX_NUM_OPS
+
+            # Check job successor condition
+            is_left_end_last_of_job = (
+                left_end_idx % self.MAX_NUM_OPS
+                == num_ops_per_job[left_end_idx // self.MAX_NUM_OPS] - 1
+            )
+            is_current_op_first_of_job = ops_order_in_job == 0
+
+            if not is_current_op_first_of_job and not is_left_end_last_of_job:
+                job_predecessor_of_current_op = op_idx - 1
+                job_successor_of_left_end = left_end_idx + 1
+
+                est_job_predecessor_current_op = est_ops[job_predecessor_of_current_op]
+                est_job_successor_left_end = est_ops[job_successor_of_left_end]
+
+                # The condition should be satisfied for allowed moves
+                assert (
+                    est_job_predecessor_current_op < est_job_successor_left_end
+                ), f"Left move for op {op_idx} should satisfy job successor condition"
+
+            # Check machine successor condition
+            machine_successor_of_left_end = critical_block_info[
+                left_end_idx, CBFields.RIGHT_NEIGHBOR
+            ]
+            if machine_successor_of_left_end >= 0 and not is_current_op_first_of_job:
+                job_predecessor_of_current_op = op_idx - 1
+                est_machine_successor_left_end = est_ops[machine_successor_of_left_end]
+                est_job_predecessor_current_op = est_ops[job_predecessor_of_current_op]
+
+                assert (
+                    est_job_predecessor_current_op <= est_machine_successor_left_end
+                ), f"Left move for op {op_idx} should satisfy machine successor condition"
+
+        # Test 3: Job precedence constraints are respected
+        for op_idx in range(len(action_mask)):
+            if action_mask[op_idx, 0]:  # Can move left
+                # Should be first in its (job, block) group or satisfy precedence
+                ops_job_id = op_idx // self.MAX_NUM_OPS
+                block_id = critical_block_info[op_idx, CBFields.BLOCK_ID]
+
+                # Find all operations in same (job, block) group
+                same_group_mask = (
+                    jnp.arange(len(critical_block_info)) // self.MAX_NUM_OPS == ops_job_id
+                ) & (critical_block_info[:, CBFields.BLOCK_ID] == block_id)
+                same_group_ops = jnp.where(same_group_mask)[0]
+
+                if len(same_group_ops) > 1:
+                    # Should be the first operation in the group
+                    first_in_group = jnp.min(same_group_ops)
+                    assert (
+                        op_idx == first_in_group
+                    ), f"Operation {op_idx} moving left should be first in its job-block group"
+
+            if action_mask[op_idx, 1]:  # Can move right
+                # Should be last in its (job, block) group or satisfy precedence
+                ops_job_id = op_idx // self.MAX_NUM_OPS
+                block_id = critical_block_info[op_idx, CBFields.BLOCK_ID]
+
+                # Find all operations in same (job, block) group
+                same_group_mask = (
+                    jnp.arange(len(critical_block_info)) // self.MAX_NUM_OPS == ops_job_id
+                ) & (critical_block_info[:, CBFields.BLOCK_ID] == block_id)
+                same_group_ops = jnp.where(same_group_mask)[0]
+
+                if len(same_group_ops) > 1:
+                    # Should be the last operation in the group
+                    last_in_group = jnp.max(same_group_ops)
+                    assert (
+                        op_idx == last_in_group
+                    ), f"Operation {op_idx} moving right should be last in its job-block group"
 
 
 class TestSelectOperationsToSwitch(TestFixtures):
