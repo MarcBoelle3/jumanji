@@ -24,6 +24,21 @@ else:
 from jumanji.environments.packing.job_shop.types import JobShopState
 
 
+@dataclass
+class BestSolution:
+    """Container for storing the best solution found so far."""
+
+    scheduled_times: chex.Array  # (max_num_jobs, max_num_ops)
+    adj_mat_pc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
+    adj_mat_mc: chex.Array  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2)
+    is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
+    action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
+    critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 8)
+    gap_left_right: chex.Array  # (max_num_jobs * max_num_ops, 2)
+    est: chex.Array  # (max_num_jobs * max_num_ops + 2,)
+    lst: chex.Array  # (max_num_jobs * max_num_ops + 2,)
+
+
 class Observation(NamedTuple):
     """
     ops_machine_ids: for each job, it specifies the machine each op must be processed on.
@@ -37,13 +52,29 @@ class Observation(NamedTuple):
 
     ops_machine_ids: chex.Array  # (num_jobs, max_num_ops)
     ops_durations: chex.Array  # (num_jobs, max_num_ops)
-    adj_mat_pc: (
-        chex.Array
-    )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
-    adj_mat_mc: (
-        chex.Array
-    )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
+    edges_pc: chex.Array  # (max_num_edges, 2)
+    edges_mc: chex.Array  # (max_num_edges, 2)
     makespan: chex.Numeric  # ()
+    incumbent_makespan: chex.Numeric  # ()
+    action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
+    observation_features: chex.Array  # (max_num_jobs * max_num_ops, 3)
+    num_machines: chex.Array  # ()
+    extra_features: chex.Array  # (max_num_ops*max_num_jobs)
+    best_solution_so_far: BestSolution  # Best solution found so far
+
+    @property
+    def agent_view(self) -> dict:
+        return {
+            "observation_features": self.observation_features,
+            "edges_pc": self.edges_pc,
+            "edges_mc": self.edges_mc,
+            "action_mask": self.action_mask,
+            "makespan": self.makespan,
+            "incumbent_makespan": self.incumbent_makespan,
+            "num_machines": self.num_machines,
+            "extra_features": self.extra_features,
+            "best_solution_so_far": self.best_solution_so_far,
+        }
 
 
 @dataclass
@@ -55,6 +86,8 @@ class ImprovementState(JobShopState):
     adj_mat_pc: adjacency matrix of the precedence constraints graph.
     adj_mat_mc: adjacency matrix of the machine constraints graph. Updated at each step.
     makespan: the current makespan of the state.
+    incumbent_makespan: the smallest makespan found so far in the episode.
+    is_on_critical_path: for each job, it specifies whether each operation is on the critical path.
     """
 
     num_ops_per_job: chex.Array  # (max_num_jobs,)
@@ -65,3 +98,13 @@ class ImprovementState(JobShopState):
         chex.Array
     )  # (max_num_jobs*max_num_ops+2, max_num_jobs*max_num_ops+2) #for source and target nodes
     makespan: chex.Numeric  # ()
+    incumbent_makespan: chex.Numeric  # ()
+    step_minimum: chex.Numeric  # ()
+    is_on_critical_path: chex.Array  # (max_num_jobs, max_num_ops)
+    action_mask: chex.Array  # (max_num_ops*max_num_jobs, 2)
+    critical_block_info: chex.Array  # (max_num_jobs * max_num_ops, 8)
+    gap_left_right: chex.Array  # (max_num_jobs * max_num_ops, 2)
+    est: chex.Array  # (max_num_jobs * max_num_ops,)
+    lst: chex.Array  # (max_num_jobs * max_num_ops,)
+    best_solution_so_far: BestSolution  # Best solution found so far
+    step_since_best: chex.Numeric  # Steps since last improvement
