@@ -42,6 +42,30 @@
 
 **Target Node**: Virtual ending node in the disjunctive graph connected to all job-ending operations.
 
+## Schedule Evaluation via Message-Passing (Section 4.4 from Zhang et al.)
+
+The computation of earliest start times (EST) and latest start times (LST) for each operation is fundamental to identifying the critical path and evaluating schedule quality. Our implementation in `compute_makespan.py` uses a GPU-compatible message-passing mechanism inspired by Graph Neural Networks, as described in Section 4.4 of the reference paper.
+
+**Reference:** Cong Zhang, Zhiguang Cao, Wen Song, Yaoxin Wu, Jie Zhang. "Deep Reinforcement Learning Guided Improvement Heuristic for Job Shop Scheduling." *arXiv preprint arXiv:2211.10936* (2022). [https://arxiv.org/abs/2211.10936](https://arxiv.org/abs/2211.10936)
+
+### Message-Passing Algorithm
+
+Given a directed disjunctive graph $G$ representing a solution $s$, the algorithm maintains a message $ms_V = (d_V, c_V)$ for each node $V \in O$. The process works as follows:
+
+**Forward Pass (EST Calculation):**
+- Initialize: $d_V = 0$ and $c_V = 1$ for all nodes, except $c_V = 0$ for source node $O_S$
+- Update messages using max-pooling: $$d_V \leftarrow mp_{max}\left(\{p_U + (1 - c_U) \cdot d_U \mid \forall U \in \mathcal{N}(V)\}\right)$$
+- After $H$ iterations: $d_V = est_V$ for all operations, and $d_T = C_{max}(s)$ (makespan)
+
+**Backward Pass (LST Calculation):**
+- Initialize: $d_V = -1$ and $c_V = 1$, except $d_T = -C_{max}(s)$ and $c_T = 0$ for target node $O_T$
+- Update messages in reverse graph: $$d_V = mp_{max}\left(\{p_U + (1 - c_U) \cdot d_U \mid \forall U \in \mathcal{N}(V)\}\right)$$
+- After $H$ iterations: $d_V = -lst_V$ for all operations
+
+This parallel approach enables efficient batch processing on GPU, significantly reducing computation time compared to traditional Critical Path Method (CPM) while maintaining mathematical equivalence.
+
+**Implementation:** See [`compute_makespan.py`](../compute_makespan.py) for the complete JAX implementation of this message-passing evaluator.
+
 ## Critical Block Features computation (via `get_critical_operations_features` in `get_actions.py`)
 
 ### What does this function do?
