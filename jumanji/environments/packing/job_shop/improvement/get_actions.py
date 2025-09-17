@@ -49,7 +49,9 @@ def _identify_critical_operations(
     Returns:
         Boolean mask indicating which operations are critical
     """
-    return jnp.isclose(est_ops, lst_ops)
+    # Only consider operations with non-negative EST/LST values (valid operations)
+    valid_ops = (est_ops >= 0) & (lst_ops >= 0)
+    return valid_ops & jnp.isclose(est_ops, lst_ops)
 
 
 def _find_and_sort_critical_edges(
