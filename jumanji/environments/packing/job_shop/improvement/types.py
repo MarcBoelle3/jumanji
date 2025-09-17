@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import IntEnum
 from typing import TYPE_CHECKING, NamedTuple
 
 import chex
@@ -22,6 +23,18 @@ else:
     from chex import dataclass
 
 from jumanji.environments.packing.job_shop.types import JobShopState
+
+
+class Neighborhood(IntEnum):
+    """Neighborhood types for job shop improvement local search.
+
+    N5: Adjacent swaps within critical blocks - operations can only swap with
+        immediate neighbors at block boundaries.
+    N6: Block end moves - operations can move to either end of their critical block.
+    """
+
+    N5 = 5
+    N6 = 6
 
 
 @dataclass

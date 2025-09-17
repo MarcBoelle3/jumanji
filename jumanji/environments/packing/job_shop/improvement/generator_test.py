@@ -23,7 +23,7 @@ from jumanji.environments.packing.job_shop.improvement.conftest import DummySche
 from jumanji.environments.packing.job_shop.improvement.generator import (
     RandomScheduleGenerator,
 )
-from jumanji.environments.packing.job_shop.improvement.types import ImprovementState
+from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Neighborhood
 from jumanji.testing.pytrees import assert_trees_are_different, assert_trees_are_equal
 
 
@@ -118,8 +118,8 @@ class TestDummyGenerator:
 
         chex.clear_trace_counter()
         call_fn = jax.jit(chex.assert_max_traces(dummy_schedule_generator.__call__, n=1))
-        state1 = call_fn(jax.random.PRNGKey(1), scenario, method_id=0, neighborhood=5)
-        state2 = call_fn(jax.random.PRNGKey(2), scenario, method_id=0, neighborhood=5)
+        state1 = call_fn(jax.random.PRNGKey(1), scenario, method_id=0, neighborhood=Neighborhood.N5)
+        state2 = call_fn(jax.random.PRNGKey(2), scenario, method_id=0, neighborhood=Neighborhood.N5)
         assert_trees_are_equal(state1, state2)
 
 
@@ -286,7 +286,9 @@ class TestRandomGenerator:
         key = jax.random.PRNGKey(0)
         scenario = dummy_scenario_generator(key, num_jobs=3, num_machines=3)
         for method_id in range(3):
-            state = random_schedule_generator(key, scenario, method_id=method_id, neighborhood=5)
+            state = random_schedule_generator(
+                key, scenario, method_id=method_id, neighborhood=Neighborhood.N5
+            )
             best = state.best_solution_so_far
             assert jnp.all(best.scheduled_times == state.scheduled_times)
             assert jnp.all(best.adj_mat_pc == state.adj_mat_pc)
@@ -306,7 +308,7 @@ class TestRandomGenerator:
         key = jax.random.PRNGKey(0)  # with this key, job priority list is [0, 1, 2]
         scenario = dummy_scenario_generator(key, num_jobs=3, num_machines=3)
 
-        state1 = random_schedule_generator(key, scenario, method_id=0, neighborhood=5)
+        state1 = random_schedule_generator(key, scenario, method_id=0, neighborhood=Neighborhood.N5)
         assert state1.ops_machine_ids.shape == (scenario.num_jobs, scenario.max_num_ops)
         assert state1.ops_durations.shape == (scenario.num_jobs, scenario.max_num_ops)
         assert state1.num_ops_per_job.shape == (scenario.num_jobs,)
@@ -325,7 +327,7 @@ class TestRandomGenerator:
             )
         )
 
-        state2 = random_schedule_generator(key, scenario, method_id=1, neighborhood=5)
+        state2 = random_schedule_generator(key, scenario, method_id=1, neighborhood=Neighborhood.N5)
         assert state2.ops_machine_ids.shape == (scenario.num_jobs, scenario.max_num_ops)
         assert state2.ops_durations.shape == (scenario.num_jobs, scenario.max_num_ops)
         assert state2.num_ops_per_job.shape == (scenario.num_jobs,)
@@ -342,7 +344,7 @@ class TestRandomGenerator:
             )
         )
 
-        state3 = random_schedule_generator(key, scenario, method_id=2, neighborhood=5)
+        state3 = random_schedule_generator(key, scenario, method_id=2, neighborhood=Neighborhood.N5)
         assert jnp.all(
             state3.scheduled_times
             == jnp.array(
@@ -369,10 +371,14 @@ class TestRandomGenerator:
         call_fn = jax.jit(chex.assert_max_traces(random_schedule_generator.__call__, n=1))
 
         # Method 0 includes stochasticity, so different keys should result in different schedules.
-        state1 = call_fn(key=jax.random.PRNGKey(1), scenario=scenario, method_id=0, neighborhood=5)
+        state1 = call_fn(
+            key=jax.random.PRNGKey(1), scenario=scenario, method_id=0, neighborhood=Neighborhood.N5
+        )
         assert isinstance(state1, ImprovementState)
 
-        state2 = call_fn(key=jax.random.PRNGKey(2), scenario=scenario, method_id=0, neighborhood=5)
+        state2 = call_fn(
+            key=jax.random.PRNGKey(2), scenario=scenario, method_id=0, neighborhood=Neighborhood.N5
+        )
         assert_trees_are_different(state1.scheduled_times, state2.scheduled_times)
 
         # Check that the call function compiles only once for each method_id.
@@ -380,12 +386,18 @@ class TestRandomGenerator:
             chex.clear_trace_counter()
             call_fn = jax.jit(chex.assert_max_traces(random_schedule_generator.__call__, n=1))
             state1 = call_fn(
-                key=jax.random.PRNGKey(1), scenario=scenario, method_id=method_id, neighborhood=5
+                key=jax.random.PRNGKey(1),
+                scenario=scenario,
+                method_id=method_id,
+                neighborhood=Neighborhood.N5,
             )
             assert isinstance(state1, ImprovementState)
 
             state2 = call_fn(
-                key=jax.random.PRNGKey(1), scenario=scenario, method_id=method_id, neighborhood=5
+                key=jax.random.PRNGKey(1),
+                scenario=scenario,
+                method_id=method_id,
+                neighborhood=Neighborhood.N5,
             )
             assert_trees_are_equal(state1, state2)
 
@@ -400,16 +412,20 @@ class TestRandomGenerator:
         key = jax.random.PRNGKey(0)
         scenario = dummy_scenario_generator(key, num_jobs=3, num_machines=3)
 
-        state = random_schedule_generator(key, scenario, method_id=2, neighborhood=6)
+        state = random_schedule_generator(key, scenario, method_id=2, neighborhood=Neighborhood.N6)
         assert state.ops_machine_ids.shape == (scenario.num_jobs, scenario.max_num_ops)
         assert state.ops_durations.shape == (scenario.num_jobs, scenario.max_num_ops)
         assert state.num_ops_per_job.shape == (scenario.num_jobs,)
 
         call_fn = jax.jit(chex.assert_max_traces(random_schedule_generator.__call__, n=1))
-        state1 = call_fn(key=jax.random.PRNGKey(1), scenario=scenario, method_id=0, neighborhood=6)
+        state1 = call_fn(
+            key=jax.random.PRNGKey(1), scenario=scenario, method_id=0, neighborhood=Neighborhood.N6
+        )
         assert isinstance(state1, ImprovementState)
 
-        state2 = call_fn(key=jax.random.PRNGKey(2), scenario=scenario, method_id=1, neighborhood=6)
+        state2 = call_fn(
+            key=jax.random.PRNGKey(2), scenario=scenario, method_id=1, neighborhood=Neighborhood.N6
+        )
         assert_trees_are_different(state1, state2)
 
     def test_random_generator__init_adj_mat_mc_fdd_mwr__jit(
@@ -425,9 +441,13 @@ class TestRandomGenerator:
 
         chex.clear_trace_counter()
         call_fn = jax.jit(chex.assert_max_traces(random_schedule_generator.__call__, n=1))
-        state1 = call_fn(key=jax.random.PRNGKey(1), scenario=scenario, method_id=2, neighborhood=6)
+        state1 = call_fn(
+            key=jax.random.PRNGKey(1), scenario=scenario, method_id=2, neighborhood=Neighborhood.N6
+        )
         assert isinstance(state1, ImprovementState)
 
-        state2 = call_fn(key=jax.random.PRNGKey(2), scenario=scenario, method_id=2, neighborhood=6)
+        state2 = call_fn(
+            key=jax.random.PRNGKey(2), scenario=scenario, method_id=2, neighborhood=Neighborhood.N6
+        )
 
         assert jnp.all(state1.scheduled_times == state2.scheduled_times)

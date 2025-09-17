@@ -31,6 +31,7 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_critical_operations_features,
     select_operations_to_switch,
 )
+from jumanji.environments.packing.job_shop.improvement.types import Neighborhood
 
 
 class TestFixtures:
@@ -173,6 +174,8 @@ class TestGetCriticalOperationsFeatures(TestFixtures):
         # Verify critical path identification
         is_on_critical_path = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH]
         # Operations 0, 1, 5, 6 should be on critical path based on the schedule
+        jax.debug.print("critical_block_info: {0}", critical_block_info)
+        jax.debug.print("is_on_critical_path: {0}", is_on_critical_path)
         expected_critical = jnp.array([1, 1, 0, 0, 0, 1, 1, 0, 0], dtype=jnp.int32)
         assert jnp.array_equal(is_on_critical_path, expected_critical)
 
@@ -998,9 +1001,11 @@ class TestSelectOperationsToSwitch(TestFixtures):
             chex.assert_max_traces(select_operations_to_switch, n=1), static_argnums=(2,)
         )
 
-        result_jit_1 = jit_fn(critical_block_info, action, 5)
-        result_jit_2 = jit_fn(critical_block_info, action, 5)
-        result_normal = select_operations_to_switch(critical_block_info, action, neighborhood=5)
+        result_jit_1 = jit_fn(critical_block_info, action, Neighborhood.N5)
+        result_jit_2 = jit_fn(critical_block_info, action, Neighborhood.N5)
+        result_normal = select_operations_to_switch(
+            critical_block_info, action, neighborhood=Neighborhood.N5
+        )
 
         assert jnp.array_equal(result_jit_1, result_normal)
         assert jnp.array_equal(result_jit_2, result_normal)

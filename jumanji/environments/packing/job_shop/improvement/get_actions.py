@@ -19,6 +19,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from jumanji.environments.packing.job_shop.improvement.types import Neighborhood
+
 
 class CBFields(IntEnum):
     """Fields of the critical block information array."""
@@ -760,7 +762,7 @@ def get_action_mask_n6(
 
 
 def select_operations_to_switch(
-    critical_block_info: chex.Array, chosen_action: chex.Array, neighborhood: int
+    critical_block_info: chex.Array, chosen_action: chex.Array, neighborhood: Neighborhood
 ) -> chex.Array:
     """Convert a chosen action into the pair of operations to switch in the schedule.
     This function determines which two operations need to be swapped based on the chosen
@@ -778,7 +780,8 @@ def select_operations_to_switch(
         chosen_action: array of chosen action, shape (2,) containing:
             - chosen_op_idx: index of the chosen operation to move
             - chosen_left_or_right: 0 to move left, 1 to move right
-        neighborhood: 5 for N5 (adjacent swaps), 6 for N6 (block end swaps)
+        neighborhood: Neighborhood.N5 for N5 (adjacent swaps), Neighborhood.N6 for
+        N6 (block end swaps)
 
     Returns:
         Array of shape (3,) containing (start_op_idx, end_op_idx, direction) where
@@ -791,7 +794,7 @@ def select_operations_to_switch(
     # - For N5, this is the immediate left or right neighbor in the critical block.
     # - For N6, this is the left_end or right_end of the critical block.
     neighbor_idx = jnp.where(
-        neighborhood == 5,
+        neighborhood == Neighborhood.N5,
         critical_block_info[chosen_op_idx, CBFields.LEFT_NEIGHBOR + left_or_right],
         critical_block_info[chosen_op_idx, CBFields.LEFT_END + left_or_right],
     )

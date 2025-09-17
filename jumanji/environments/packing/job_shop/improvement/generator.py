@@ -30,7 +30,11 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
 from jumanji.environments.packing.job_shop.improvement.initialization_heuristic_rules import (
     schedule_op_in_earliest_slot,
 )
-from jumanji.environments.packing.job_shop.improvement.types import BestSolution, ImprovementState
+from jumanji.environments.packing.job_shop.improvement.types import (
+    BestSolution,
+    ImprovementState,
+    Neighborhood,
+)
 from jumanji.environments.packing.job_shop.types import Scenario
 
 
@@ -64,7 +68,7 @@ class ScheduleGenerator(abc.ABC):
 
     @abc.abstractmethod
     def __call__(
-        self, key: chex.PRNGKey, scenario: Scenario, method_id: int, neighborhood: int
+        self, key: chex.PRNGKey, scenario: Scenario, method_id: int, neighborhood: Neighborhood
     ) -> ImprovementState:
         """Call method responsible for generating a new state.
 
@@ -73,6 +77,7 @@ class ScheduleGenerator(abc.ABC):
             scenario: a `Scenario` object that contains the problem instance.
             method_id: the id of the method to use for generating the initial machine constraint
                        adjacency matrix.
+            neighborhood: the neighborhood to use for generating the initial action mask.
 
         Returns:
             A `JobShopImprovement` environment state.
@@ -153,7 +158,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
         super().__init__(num_jobs, num_machines, max_num_jobs, max_num_ops)
 
     def __call__(
-        self, key: chex.PRNGKey, scenario: Scenario, method_id: int, neighborhood: int
+        self, key: chex.PRNGKey, scenario: Scenario, method_id: int, neighborhood: Neighborhood
     ) -> ImprovementState:
         # Compute the maximum number of edges in the disjunctive graph.
         max_num_edges = (1 + 2 * self.max_num_ops) * self.max_num_jobs
@@ -189,7 +194,7 @@ class RandomScheduleGenerator(ScheduleGenerator):
             est, lst, adj_mat_mc, ops_durations, self.max_num_jobs, self.max_num_ops, max_num_edges
         )
         action_mask = jax.lax.cond(
-            neighborhood == 5,
+            neighborhood == Neighborhood.N5,
             lambda x: get_action_mask_n5(x, self.max_num_ops),
             lambda x: get_action_mask_n6(x, self.max_num_ops, est, num_ops_per_job),
             critical_block_info,

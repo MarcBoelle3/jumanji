@@ -19,7 +19,7 @@ import pytest
 from chex import PRNGKey
 
 from jumanji.environments.packing.job_shop.improvement.generator import ScheduleGenerator
-from jumanji.environments.packing.job_shop.improvement.types import ImprovementState
+from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Neighborhood
 from jumanji.environments.packing.job_shop.types import Scenario
 
 
@@ -33,7 +33,11 @@ class DummyScheduleGenerator(ScheduleGenerator):
         super().__init__(num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3)
 
     def __call__(
-        self, key: PRNGKey, scenario: Scenario, method_id: int, neighborhood: int = 5
+        self,
+        key: PRNGKey,
+        scenario: Scenario,
+        method_id: int,
+        neighborhood: Neighborhood = Neighborhood.N5,
     ) -> ImprovementState:
         """Call method responsible for generating a new state. It returns a job shop scheduling
         instance with a non-optimal valid solution.
@@ -43,7 +47,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
                 in this generator.
             scenario: Scenario object containing the problem definition. Not used in this generator.
             method_id: Method ID for schedule generation. Not used in this generator.
-            neighborhood: Neighborhood type (5 or 6). Not used in this generator.
+            neighborhood: Neighborhood type (N5 or N6). Not used in this generator.
         Returns:
             A JobShop State.
         """
