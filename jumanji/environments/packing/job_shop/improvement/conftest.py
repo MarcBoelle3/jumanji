@@ -19,7 +19,11 @@ import pytest
 from chex import PRNGKey
 
 from jumanji.environments.packing.job_shop.improvement.generator import ScheduleGenerator
-from jumanji.environments.packing.job_shop.improvement.types import ImprovementState, Neighborhood
+from jumanji.environments.packing.job_shop.improvement.types import (
+    ImprovementState,
+    Neighborhood,
+    SchedulingMethod,
+)
 from jumanji.environments.packing.job_shop.types import Scenario
 
 
@@ -36,7 +40,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
         self,
         key: PRNGKey,
         scenario: Scenario,
-        method_id: int,
+        method: SchedulingMethod,
         neighborhood: Neighborhood = Neighborhood.N5,
     ) -> ImprovementState:
         """Call method responsible for generating a new state. It returns a job shop scheduling
@@ -46,14 +50,14 @@ class DummyScheduleGenerator(ScheduleGenerator):
             key: jax random key for any stochasticity used in the generation process. Not used
                 in this generator.
             scenario: Scenario object containing the problem definition. Not used in this generator.
-            method_id: Method ID for schedule generation. Not used in this generator.
+            method: Scheduling method enum. Not used in this generator.
             neighborhood: Neighborhood type (N5 or N6). Not used in this generator.
         Returns:
             A JobShop State.
         """
         del key
         del scenario
-        del method_id
+        del method
         del neighborhood
 
         ops_machine_ids = jnp.array(
@@ -88,7 +92,7 @@ class DummyScheduleGenerator(ScheduleGenerator):
 
         step_count = jnp.array(0, jnp.int32)
 
-        adj_mat_pc = self.init_adj_mat_pc(ops_durations, num_ops_per_job)
+        adj_mat_pc = self.build_precedence_matrix(ops_durations, num_ops_per_job)
         adj_mat_mc = jnp.array(
             [
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
