@@ -899,16 +899,26 @@ class TestSelectOperationsToSwitch(TestFixtures):
         "neighborhood,op_idx,direction,expected_behavior",
         [
             # N5 test cases - adjacent swaps within critical blocks
-            (5, 5, 0, "left_neighbor_swap"),  # op 5 moves left, swaps with left neighbor
-            (5, 1, 1, "right_neighbor_swap"),  # op 1 moves right, swaps with right neighbor
+            (
+                Neighborhood.N5,
+                5,
+                0,
+                "left_neighbor_swap",
+            ),  # op 5 moves left, swaps with left neighbor
+            (
+                Neighborhood.N5,
+                1,
+                1,
+                "right_neighbor_swap",
+            ),  # op 1 moves right, swaps with right neighbor
             # N6 test cases - moves to block ends
-            (6, 6, 0, "move_to_left_end"),  # op 6 moves to left end of its block
-            (6, 1, 1, "move_to_right_end"),  # op 1 moves to right end of its block
+            (Neighborhood.N6, 6, 0, "move_to_left_end"),  # op 6 moves to left end of its block
+            (Neighborhood.N6, 1, 1, "move_to_right_end"),  # op 1 moves to right end of its block
         ],
     )
     def test_operation_selection(
         self,
-        neighborhood: int,
+        neighborhood: Neighborhood,
         op_idx: int,
         direction: int,
         expected_behavior: str,
@@ -931,6 +941,10 @@ class TestSelectOperationsToSwitch(TestFixtures):
 
         # Create action and get result
         action = jnp.array([op_idx, direction], dtype=jnp.int32)
+        # Ensure neighborhood is of correct type (mypy issue with parametrize)
+        assert isinstance(
+            neighborhood, Neighborhood
+        ), f"Expected Neighborhood, got {type(neighborhood)}"
         result = select_operations_to_switch(critical_block_info, action, neighborhood=neighborhood)
 
         # Common assertions for all cases
