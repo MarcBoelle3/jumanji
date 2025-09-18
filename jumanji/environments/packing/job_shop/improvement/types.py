@@ -37,6 +37,22 @@ class Neighborhood(IntEnum):
     N6 = 6
 
 
+class SchedulingMethod(IntEnum):
+    """Scheduling methods for initial job shop schedule generation.
+
+    PRIORITY_LIST: Random job priority list scheduling - operations scheduled
+                   in random job order on each machine.
+    SHORTEST_PROCESSING_TIME: SPT dispatching rule - operations with shortest
+                              processing time are scheduled first.
+    FLOW_DUE_DATE_MOST_WORK: FDD/MWR ratio scheduling - priority based on
+                             Flow Due Date / Most Work Remaining ratio.
+    """
+
+    PRIORITY_LIST = 0
+    SHORTEST_PROCESSING_TIME = 1
+    FLOW_DUE_DATE_MOST_WORK = 2
+
+
 @dataclass
 class BestSolution:
     """Container for storing the best solution found so far."""
