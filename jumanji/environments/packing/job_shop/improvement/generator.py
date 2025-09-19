@@ -123,8 +123,8 @@ class ScheduleGenerator(abc.ABC):
         ops_mask = ops_flat != -1
         durations = jnp.where(ops_mask, ops_flat, 0)
 
-        # Link operation i to operation i+1 with duration weight
-        adj_mat = jnp.diag(durations[:-1], k=1)
+        # Link operation i to operation i+1 with duration weight, only if operation i+1 is valid
+        adj_mat = jnp.diag(durations[:-1] * ops_mask[1:], k=1)
 
         # Break links between jobs (last op of job i -> first op of job i+1)
         job_boundaries = jnp.arange(self.max_num_ops - 1, num_ops_total, self.max_num_ops)
