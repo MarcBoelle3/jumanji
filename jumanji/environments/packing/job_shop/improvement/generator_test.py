@@ -21,7 +21,7 @@ import pytest
 from jumanji.environments.packing.job_shop.conftest import DummyScenarioGenerator
 from jumanji.environments.packing.job_shop.improvement.conftest import DummyScheduleGenerator
 from jumanji.environments.packing.job_shop.improvement.generator import (
-    RandomScheduleGenerator,
+    ScheduleGenerator,
 )
 from jumanji.environments.packing.job_shop.improvement.scheduling import MethodRegistry
 from jumanji.environments.packing.job_shop.improvement.types import (
@@ -115,8 +115,8 @@ class TestDisjunctiveGraph:
     """Test properties of the disjunctive graph (max of precedence and machine constraints)."""
 
     @pytest.fixture
-    def random_schedule_generator(self) -> RandomScheduleGenerator:
-        return RandomScheduleGenerator(num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3)
+    def schedule_generator(self) -> ScheduleGenerator:
+        return ScheduleGenerator(num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3)
 
     @pytest.fixture
     def test_scenario(self, dummy_scenario_generator: DummyScenarioGenerator) -> Scenario:
@@ -126,13 +126,13 @@ class TestDisjunctiveGraph:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_disjunctive_graph_no_self_loops(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that the disjunctive graph has no self-loops."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Create disjunctive graph as max of precedence and machine constraints
         disjunctive_graph = jnp.maximum(state.adj_mat_pc, state.adj_mat_mc)
@@ -145,13 +145,13 @@ class TestDisjunctiveGraph:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_disjunctive_graph_no_cycles(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that the disjunctive graph has no cycles."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Create disjunctive graph as max of precedence and machine constraints
         disjunctive_graph = jnp.maximum(state.adj_mat_pc, state.adj_mat_mc)
@@ -171,13 +171,13 @@ class TestDisjunctiveGraph:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_disjunctive_graph_node_connectivity(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test node connectivity constraints in the disjunctive graph."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Create disjunctive graph as max of precedence and machine constraints
         disjunctive_graph = jnp.maximum(state.adj_mat_pc, state.adj_mat_mc)
@@ -231,13 +231,13 @@ class TestDisjunctiveGraph:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_disjunctive_graph_invalid_operations_isolation(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that invalid operations are isolated in the disjunctive graph."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Create disjunctive graph as max of precedence and machine constraints
         disjunctive_graph = jnp.maximum(state.adj_mat_pc, state.adj_mat_mc)
@@ -269,13 +269,13 @@ class TestDisjunctiveGraph:
                         )
 
 
-class TestRandomScheduleGenerator:
-    """Comprehensive tests for the refactored RandomScheduleGenerator."""
+class TestScheduleGenerator:
+    """Comprehensive tests for the ScheduleGenerator."""
 
     @pytest.fixture
-    def random_schedule_generator(self) -> RandomScheduleGenerator:
-        """Create a RandomScheduleGenerator with automatic method discovery."""
-        return RandomScheduleGenerator(
+    def schedule_generator(self) -> ScheduleGenerator:
+        """Create a ScheduleGenerator with automatic method discovery."""
+        return ScheduleGenerator(
             num_jobs=3,
             num_machines=3,
             max_num_jobs=3,
@@ -288,23 +288,19 @@ class TestRandomScheduleGenerator:
         key = jax.random.PRNGKey(42)
         return dummy_scenario_generator(key, num_jobs=3, num_machines=3)
 
-    def test_simplified_api_instantiation(
-        self, random_schedule_generator: RandomScheduleGenerator
-    ) -> None:
+    def test_simplified_api_instantiation(self, schedule_generator: ScheduleGenerator) -> None:
         """Test that the simplified API works correctly."""
         # Should automatically discover and instantiate all registered methods
-        assert len(random_schedule_generator.scheduling_methods) == len(
-            MethodRegistry.get_method_names()
-        )
+        assert len(schedule_generator.scheduling_methods) == len(MethodRegistry.get_method_names())
 
         # Verify properties
-        assert random_schedule_generator.num_jobs == 3
-        assert random_schedule_generator.num_machines == 3
-        assert random_schedule_generator.max_num_jobs == 3
-        assert random_schedule_generator.max_num_ops == 3
+        assert schedule_generator.num_jobs == 3
+        assert schedule_generator.num_machines == 3
+        assert schedule_generator.max_num_jobs == 3
+        assert schedule_generator.max_num_ops == 3
 
         # Verify that all methods are properly initialized with correct parameters
-        for method in random_schedule_generator.scheduling_methods:
+        for method in schedule_generator.scheduling_methods:
             assert method.num_jobs == 3
             assert method.num_machines == 3
             assert method.max_num_jobs == 3
@@ -313,7 +309,7 @@ class TestRandomScheduleGenerator:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_method_switching(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
@@ -321,7 +317,7 @@ class TestRandomScheduleGenerator:
         key = jax.random.PRNGKey(42)
 
         # Generate state with the specified method
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Verify the state is valid
         assert isinstance(state, ImprovementState)
@@ -344,7 +340,7 @@ class TestRandomScheduleGenerator:
     )
     def test_deterministic_methods_consistency(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
@@ -352,8 +348,8 @@ class TestRandomScheduleGenerator:
         key1 = jax.random.PRNGKey(42)
         key2 = jax.random.PRNGKey(84)
 
-        state1 = random_schedule_generator(key1, test_scenario, method, Neighborhood.N5)
-        state2 = random_schedule_generator(key2, test_scenario, method, Neighborhood.N5)
+        state1 = schedule_generator(key1, test_scenario, method, Neighborhood.N5)
+        state2 = schedule_generator(key2, test_scenario, method, Neighborhood.N5)
 
         # Deterministic methods should produce identical results regardless of key
         assert jnp.allclose(state1.adj_mat_pc, state2.adj_mat_pc)
@@ -361,14 +357,14 @@ class TestRandomScheduleGenerator:
         assert jnp.allclose(state1.scheduled_times, state2.scheduled_times)
 
     def test_best_solution_initialization(
-        self, random_schedule_generator: RandomScheduleGenerator, test_scenario: Scenario
+        self, schedule_generator: ScheduleGenerator, test_scenario: Scenario
     ) -> None:
         """Test that best_solution_so_far is correctly initialized."""
         key = jax.random.PRNGKey(42)
 
         # Test all methods from registry
         for method in SchedulingMethod:
-            state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+            state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
             best = state.best_solution_so_far
 
             # Best solution should mirror the initially generated state
@@ -383,11 +379,11 @@ class TestRandomScheduleGenerator:
 
 
 class TestJitCompatibility:
-    """Test JAX JIT compatibility of the RandomScheduleGenerator."""
+    """Test JAX JIT compatibility of the ScheduleGenerator."""
 
     @pytest.fixture
-    def random_schedule_generator(self) -> RandomScheduleGenerator:
-        return RandomScheduleGenerator(
+    def schedule_generator(self) -> ScheduleGenerator:
+        return ScheduleGenerator(
             num_jobs=3,
             num_machines=3,
             max_num_jobs=3,
@@ -402,7 +398,7 @@ class TestJitCompatibility:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_generator_jit_compilation(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
@@ -415,7 +411,7 @@ class TestJitCompatibility:
             method_enum: SchedulingMethod,
             neighborhood: Neighborhood,
         ) -> ImprovementState:
-            return random_schedule_generator(key, scenario, method_enum, neighborhood)
+            return schedule_generator(key, scenario, method_enum, neighborhood)
 
         # Clear trace counter and create JIT-compiled function with max traces assertion
         chex.clear_trace_counter()
@@ -432,13 +428,13 @@ class TestJitCompatibility:
         assert isinstance(state2, ImprovementState)
 
     def test_method_switching_under_jit(
-        self, random_schedule_generator: RandomScheduleGenerator, test_scenario: Scenario
+        self, schedule_generator: ScheduleGenerator, test_scenario: Scenario
     ) -> None:
         """Test that method switching works correctly under JIT."""
 
         # Create a wrapper function for method switching
         def generate_with_method(method: SchedulingMethod) -> ImprovementState:
-            return random_schedule_generator(
+            return schedule_generator(
                 jax.random.PRNGKey(42), test_scenario, method, Neighborhood.N5
             )
 
@@ -459,12 +455,12 @@ class TestJitCompatibility:
                 assert_trees_are_equal(states[method], state2)
 
     def test_jit_with_different_neighborhoods(
-        self, random_schedule_generator: RandomScheduleGenerator, test_scenario: Scenario
+        self, schedule_generator: ScheduleGenerator, test_scenario: Scenario
     ) -> None:
         """Test JIT compilation with different neighborhood types."""
 
         def generate_with_neighborhood(neighborhood: Neighborhood) -> ImprovementState:
-            return random_schedule_generator(
+            return schedule_generator(
                 jax.random.PRNGKey(42),
                 test_scenario,
                 SchedulingMethod.SHORTEST_PROCESSING_TIME,
@@ -484,12 +480,12 @@ class TestJitCompatibility:
         assert not jnp.allclose(state_n5.action_mask, state_n6.action_mask)
 
     def test_compilation_tracing_efficiency(
-        self, random_schedule_generator: RandomScheduleGenerator, test_scenario: Scenario
+        self, schedule_generator: ScheduleGenerator, test_scenario: Scenario
     ) -> None:
         """Test that JIT compilation is efficient and doesn't retrace unnecessarily."""
 
         def generate_state(method: SchedulingMethod) -> ImprovementState:
-            return random_schedule_generator(
+            return schedule_generator(
                 jax.random.PRNGKey(42), test_scenario, method, Neighborhood.N5
             )
 
@@ -512,8 +508,8 @@ class TestScheduleValidation:
     """Test that generated schedules are valid and respect constraints."""
 
     @pytest.fixture
-    def random_schedule_generator(self) -> RandomScheduleGenerator:
-        return RandomScheduleGenerator(num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3)
+    def schedule_generator(self) -> ScheduleGenerator:
+        return ScheduleGenerator(num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3)
 
     @pytest.fixture
     def test_scenario(self, dummy_scenario_generator: DummyScenarioGenerator) -> Scenario:
@@ -523,13 +519,13 @@ class TestScheduleValidation:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_schedule_respects_precedence_constraints(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that generated schedules respect job precedence constraints."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # For each job, verify that operations are scheduled in order
         for job_id in range(state.ops_machine_ids.shape[0]):
@@ -556,13 +552,13 @@ class TestScheduleValidation:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_schedule_respects_machine_constraints(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that no two operations on the same machine overlap."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Group operations by machine
         machine_operations: dict[int, list[tuple[float, float, int, int]]] = {}
@@ -599,13 +595,13 @@ class TestScheduleValidation:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_makespan_calculation(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that makespan is correctly calculated."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Calculate expected makespan
         max_end_time = 0.0
@@ -628,13 +624,13 @@ class TestScheduleValidation:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_schedule_times_are_valid(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that all scheduled times are non-negative and finite."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Check valid operations have non-negative times
         valid_mask = state.ops_machine_ids != -1
@@ -653,13 +649,13 @@ class TestScheduleValidation:
     @pytest.mark.parametrize("method", list(SchedulingMethod))
     def test_critical_path_analysis(
         self,
-        random_schedule_generator: RandomScheduleGenerator,
+        schedule_generator: ScheduleGenerator,
         test_scenario: Scenario,
         method: SchedulingMethod,
     ) -> None:
         """Test that critical path analysis produces reasonable results."""
         key = jax.random.PRNGKey(42)
-        state = random_schedule_generator(key, test_scenario, method, Neighborhood.N5)
+        state = schedule_generator(key, test_scenario, method, Neighborhood.N5)
 
         # Critical path info should have correct shape (max_num_jobs * max_num_ops)
         expected_ops = state.ops_machine_ids.shape[0] * state.ops_machine_ids.shape[1]  # No +2
