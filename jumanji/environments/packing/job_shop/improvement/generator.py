@@ -93,6 +93,9 @@ class ScheduleGenerator:
         Returns:
             Initial improvement state with schedule and action mask.
         """
+
+        # Upper bound on the number of edges in the disjunctive graph.
+        # See doc/doc.md for more details.
         max_num_edges = (1 + 2 * self.max_num_ops) * self.max_num_jobs
 
         # Extract scenario data

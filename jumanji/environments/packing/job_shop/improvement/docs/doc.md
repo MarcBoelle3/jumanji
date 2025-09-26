@@ -64,6 +64,19 @@ Given a directed disjunctive graph $G$ representing a solution $s$, the algorith
 
 This parallel approach enables efficient batch processing on GPU, significantly reducing computation time compared to traditional Critical Path Method (CPM) while maintaining mathematical equivalence.
 
+### Sparse Matrix Representation and `max_num_edges`
+
+In `compute_makespan.py`, we transform the adjacency matrix representation into a sparse matrix representation where only edges are registered. The parameter `max_num_edges` serves as an upper bound on the number of edges in the disjunctive graph and is computed as follows:
+
+**Job Precedence Edges:** Each operation has at most one outgoing edge to the next operation in the same job, plus source-to-first and last-to-target connections:
+$$\text{PC edges} \leq \max\_num\_jobs \times \max\_num\_ops + \max\_num\_jobs$$
+
+**Machine Precedence Edges:** Each operation has at most one outgoing edge to the next operation on the same machine:
+$$\text{MC edges} \leq \max\_num\_jobs \times \max\_num\_ops$$
+
+**Total Upper Bound:**
+$$\max\_num\_edges = (1 + 2 \times \max\_num\_ops) \times \max\_num\_jobs$$
+
 **Implementation:** See [`compute_makespan.py`](../compute_makespan.py) for the complete JAX implementation of this message-passing evaluator.
 
 ## Critical Block Features computation (via `get_critical_operations_features` in `get_actions.py`)
