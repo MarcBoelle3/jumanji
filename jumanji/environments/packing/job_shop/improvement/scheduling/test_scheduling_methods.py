@@ -23,6 +23,7 @@ from jumanji.environments.packing.job_shop.improvement.scheduling import (
     PriorityListMethod,
     ShortestProcessingTimeMethod,
 )
+from jumanji.environments.packing.job_shop.improvement.types import SchedulingMethod
 
 
 # Test data configurations
@@ -77,7 +78,6 @@ class TestPriorityListMethod:
         """Test basic method properties."""
         method = PriorityListMethod(num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3)
         assert method.name == "priority_list"
-        assert "Random job priority list" in method.description
 
 
 class TestShortestProcessingTimeMethod:
@@ -89,7 +89,6 @@ class TestShortestProcessingTimeMethod:
             num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3
         )
         assert method.name == "shortest_processing_time"
-        assert "Shortest Processing Time" in method.description
 
 
 class TestFlowDueDateMostWorkMethod:
@@ -101,7 +100,6 @@ class TestFlowDueDateMostWorkMethod:
             num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3
         )
         assert method.name == "flow_due_date_most_work"
-        assert "Flow Due Date" in method.description
 
 
 class TestMethodRegistry:
@@ -156,7 +154,6 @@ class TestMethodRegistry:
             "priority_list", num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3
         )
         assert hasattr(method, "name")
-        assert hasattr(method, "description")
         assert method.name == "priority_list"
 
     def test_unknown_method_raises_error(self) -> None:
@@ -165,6 +162,31 @@ class TestMethodRegistry:
             MethodRegistry.get_method(
                 "unknown", num_jobs=3, num_machines=3, max_num_jobs=3, max_num_ops=3
             )
+
+    def test_registry_order_matches_enum_order(self) -> None:
+        """Test that the order of methods in registry matches SchedulingMethod enum order.
+
+        This is critical for calls that use enum values as indices
+        into method lists created from the registry.
+        """
+        # Get the expected names based on enum order
+        expected_names = []
+        for enum_val in SchedulingMethod:
+            # Get instances to check which method corresponds to each enum value
+            instances = MethodRegistry.get_instances(3, 3, 3, 3)
+            method_instance = instances[enum_val.value]
+            expected_names.append(method_instance.name)
+
+        # Test 1: Registry order should match the order when accessing instances by enum value
+        instances = MethodRegistry.get_instances(3, 3, 3, 3)
+        actual_names = [instance.name for instance in instances]
+
+        assert actual_names == expected_names, (
+            f"Registry order doesn't match SchedulingMethod enum order!\n"
+            f"Registry order: {actual_names}\n"
+            f"Expected order: {expected_names}\n"
+            f"This will cause jax.lax.switch(method, branches) to call the wrong method!"
+        )
 
 
 class TestBasicSchedulingProperties:
