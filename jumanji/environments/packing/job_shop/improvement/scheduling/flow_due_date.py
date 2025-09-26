@@ -40,13 +40,11 @@ class FlowDueDateMostWorkMethod(AbstractSchedulingMethod):
     Lower ratios indicate higher priority.
     """
 
-    @property
-    def name(self) -> str:
-        return "flow_due_date_most_work"
+    NAME = "flow_due_date_most_work"
 
     @property
-    def description(self) -> str:
-        return "Flow Due Date / Most Work Remaining (FDD/MWR) scheduling"
+    def name(self) -> str:
+        return self.NAME
 
     def build_machine_adjacency_matrix(
         self,

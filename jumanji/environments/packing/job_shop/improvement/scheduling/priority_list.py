@@ -34,13 +34,11 @@ class PriorityListMethod(AbstractSchedulingMethod):
     is determined by randomly permuting the job indices.
     """
 
-    @property
-    def name(self) -> str:
-        return "priority_list"
+    NAME = "priority_list"
 
     @property
-    def description(self) -> str:
-        return "Random job priority list scheduling"
+    def name(self) -> str:
+        return self.NAME
 
     def build_machine_adjacency_matrix(
         self,

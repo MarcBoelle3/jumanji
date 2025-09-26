@@ -13,14 +13,23 @@
 # limitations under the License.
 
 from collections import OrderedDict
-from typing import List, Type
+from typing import Dict, List, Type
 
 from jumanji.environments.packing.job_shop.improvement.scheduling.base import (
     AbstractSchedulingMethod,
 )
+from jumanji.environments.packing.job_shop.improvement.types import SchedulingMethod
 
 # Store method classes in order of registration
 _REGISTRY = OrderedDict()
+
+# Explicit mapping from SchedulingMethod enum to method names
+# This decouples enum ordering from import/registration order
+_ENUM_TO_NAME_MAPPING: Dict[SchedulingMethod, str] = {
+    SchedulingMethod.PRIORITY_LIST: "priority_list",
+    SchedulingMethod.SHORTEST_PROCESSING_TIME: "shortest_processing_time",
+    SchedulingMethod.FLOW_DUE_DATE_MOST_WORK: "flow_due_date_most_work",
+}
 
 
 class MethodRegistry:
@@ -39,10 +48,11 @@ class MethodRegistry:
         Raises:
             ValueError: If method name is already registered.
         """
-        # Create temporary instance to get name
-        temp_instance = cls(num_jobs=1, num_machines=1, max_num_jobs=1, max_num_ops=1)
-        method_name = temp_instance.name
+        # Use class-level NAME attribute instead of creating temporary instance
+        if not hasattr(cls, "NAME") or cls.NAME is NotImplemented:
+            raise ValueError(f"Class {cls.__name__} must define a NAME class attribute.")
 
+        method_name = cls.NAME
         if method_name in _REGISTRY:
             raise ValueError(f"Method {method_name} already registered.")
         _REGISTRY[method_name] = cls
@@ -57,7 +67,7 @@ class MethodRegistry:
     def get_instances(
         num_jobs: int, num_machines: int, max_num_jobs: int, max_num_ops: int
     ) -> List[AbstractSchedulingMethod]:
-        """Returns an ordered list of registered method instances with given parameters.
+        """Returns an ordered list of method instances in SchedulingMethod enum order.
 
         Args:
             num_jobs: Number of jobs to schedule.
@@ -66,11 +76,16 @@ class MethodRegistry:
             max_num_ops: Maximum number of operations per job (static parameter).
 
         Returns:
-            List of instantiated scheduling methods in registration order.
+            List of instantiated scheduling methods in enum order.
         """
-        return [
-            cls(num_jobs, num_machines, max_num_jobs, max_num_ops) for cls in _REGISTRY.values()
-        ]
+        instances = []
+        for enum_val in SchedulingMethod:
+            method_name = _ENUM_TO_NAME_MAPPING[enum_val]
+            if method_name not in _REGISTRY:
+                raise ValueError(f"Method '{method_name}' for {enum_val} not registered.")
+            cls = _REGISTRY[method_name]
+            instances.append(cls(num_jobs, num_machines, max_num_jobs, max_num_ops))
+        return instances
 
     @staticmethod
     def get_method_index(name: str) -> int:

@@ -21,6 +21,9 @@ import chex
 class AbstractSchedulingMethod(abc.ABC):
     """Base class for job shop scheduling methods."""
 
+    # Class-level name attribute
+    NAME: str = NotImplemented
+
     def __init__(
         self,
         num_jobs: int,
@@ -45,11 +48,6 @@ class AbstractSchedulingMethod(abc.ABC):
     @abc.abstractmethod
     def name(self) -> str:
         """Human-readable identifier for the scheduling method."""
-
-    @property
-    @abc.abstractmethod
-    def description(self) -> str:
-        """Brief description of the scheduling algorithm."""
 
     @abc.abstractmethod
     def build_machine_adjacency_matrix(

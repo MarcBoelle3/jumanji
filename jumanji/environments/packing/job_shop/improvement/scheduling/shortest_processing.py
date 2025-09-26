@@ -35,13 +35,11 @@ class ShortestProcessingTimeMethod(AbstractSchedulingMethod):
     candidates is selected.
     """
 
-    @property
-    def name(self) -> str:
-        return "shortest_processing_time"
+    NAME = "shortest_processing_time"
 
     @property
-    def description(self) -> str:
-        return "Shortest Processing Time (SPT) scheduling"
+    def name(self) -> str:
+        return self.NAME
 
     def build_machine_adjacency_matrix(
         self,
