@@ -68,7 +68,7 @@ from jumanji.environments.packing.job_shop.improvement.types import SchedulingMe
 )
 def sample_problem(request: pytest.FixtureRequest) -> tuple[chex.Array, chex.Array]:
     """Create test problems with different padding scenarios."""
-    return request.param
+    return request.param  # type: ignore[no-any-return]
 
 
 class TestPriorityListMethod:
