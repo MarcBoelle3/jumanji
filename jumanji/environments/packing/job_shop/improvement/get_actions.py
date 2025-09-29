@@ -19,6 +19,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from jumanji.environments.packing.job_shop.improvement.types import Neighborhood
+
 
 class CBFields(IntEnum):
     """Fields of the critical block information array."""
@@ -49,7 +51,9 @@ def _identify_critical_operations(
     Returns:
         Boolean mask indicating which operations are critical
     """
-    return jnp.isclose(est_ops, lst_ops)
+    # Only consider operations with non-negative EST/LST values (valid operations)
+    valid_ops = (est_ops >= 0) & (lst_ops >= 0)
+    return valid_ops & jnp.isclose(est_ops, lst_ops)
 
 
 def _find_and_sort_critical_edges(
@@ -194,8 +198,8 @@ def _find_critical_block_features(
         start_idx, end_idx = critical_block_pairs[i]
 
         # Get block information from start operation
-        block_id = critical_block_info[start_idx, CBFields.BLOCK_ID].astype(jnp.int32)
-        left_end_of_start_idx = critical_block_info[start_idx, CBFields.LEFT_END].astype(jnp.int32)
+        block_id = critical_block_info[start_idx, CBFields.BLOCK_ID]
+        left_end_of_start_idx = critical_block_info[start_idx, CBFields.LEFT_END]
 
         critical_block_info = (
             critical_block_info.at[end_idx, CBFields.BLOCK_ID]
@@ -244,7 +248,7 @@ def _finalize_critical_blocks(
     # Set right ends and identify left operations efficiently
     critical_block_info = (
         critical_block_info.at[:, CBFields.RIGHT_END]
-        .set(jnp.where(block_ids != -1, right_end_array[block_ids], -1))
+        .set(right_end_array[block_ids])
         .at[:, CBFields.IS_LEFT]
         .set(
             block_ids == ops_indices  # Left ops have block_id == their own index
@@ -536,7 +540,11 @@ def _check_right_move_acyclic_constraints(
     Returns:
         Boolean array indicating which operations can move right without creating cycles
     """
-    right_end_idx = critical_block_info[:, CBFields.RIGHT_END]
+
+    right_end_idx = critical_block_info[
+        :, CBFields.RIGHT_END
+    ]  # For invalid operations, this array is -1
+    # It is not necessary to check for invalid operations because masks are applied later
 
     # Obtain earliest start time of job predecessor of right end operation
     has_right_end_job_predecessor = right_end_idx % max_num_ops == 0
@@ -590,7 +598,10 @@ def _check_left_move_temporal_constraints(
     Returns:
         Boolean array indicating which operations can move left without violating constraints
     """
-    left_end_idx = critical_block_info[:, CBFields.LEFT_END]
+    left_end_idx = critical_block_info[
+        :, CBFields.LEFT_END
+    ]  # For invalid operations, this array is -1
+    # It is not necessary to check for invalid operations because masks are applied later
 
     # Obtain earliest start time of job successor of left end operation
     is_left_end_last_of_job = (
@@ -758,7 +769,7 @@ def get_action_mask_n6(
 
 
 def select_operations_to_switch(
-    critical_block_info: chex.Array, chosen_action: chex.Array, neighborhood: int
+    critical_block_info: chex.Array, chosen_action: chex.Array, neighborhood: Neighborhood
 ) -> chex.Array:
     """Convert a chosen action into the pair of operations to switch in the schedule.
     This function determines which two operations need to be swapped based on the chosen
@@ -776,7 +787,8 @@ def select_operations_to_switch(
         chosen_action: array of chosen action, shape (2,) containing:
             - chosen_op_idx: index of the chosen operation to move
             - chosen_left_or_right: 0 to move left, 1 to move right
-        neighborhood: 5 for N5 (adjacent swaps), 6 for N6 (block end swaps)
+        neighborhood: Neighborhood.N5 for N5 (adjacent swaps), Neighborhood.N6 for
+        N6 (block end swaps)
 
     Returns:
         Array of shape (3,) containing (start_op_idx, end_op_idx, direction) where
@@ -789,7 +801,7 @@ def select_operations_to_switch(
     # - For N5, this is the immediate left or right neighbor in the critical block.
     # - For N6, this is the left_end or right_end of the critical block.
     neighbor_idx = jnp.where(
-        neighborhood == 5,
+        neighborhood == Neighborhood.N5,
         critical_block_info[chosen_op_idx, CBFields.LEFT_NEIGHBOR + left_or_right],
         critical_block_info[chosen_op_idx, CBFields.LEFT_END + left_or_right],
     )

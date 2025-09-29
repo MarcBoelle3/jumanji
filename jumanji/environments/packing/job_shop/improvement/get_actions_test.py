@@ -31,6 +31,7 @@ from jumanji.environments.packing.job_shop.improvement.get_actions import (
     get_critical_operations_features,
     select_operations_to_switch,
 )
+from jumanji.environments.packing.job_shop.improvement.types import Neighborhood
 
 
 class TestFixtures:
@@ -173,6 +174,8 @@ class TestGetCriticalOperationsFeatures(TestFixtures):
         # Verify critical path identification
         is_on_critical_path = critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH]
         # Operations 0, 1, 5, 6 should be on critical path based on the schedule
+        jax.debug.print("critical_block_info: {0}", critical_block_info)
+        jax.debug.print("is_on_critical_path: {0}", is_on_critical_path)
         expected_critical = jnp.array([1, 1, 0, 0, 0, 1, 1, 0, 0], dtype=jnp.int32)
         assert jnp.array_equal(is_on_critical_path, expected_critical)
 
@@ -896,16 +899,26 @@ class TestSelectOperationsToSwitch(TestFixtures):
         "neighborhood,op_idx,direction,expected_behavior",
         [
             # N5 test cases - adjacent swaps within critical blocks
-            (5, 5, 0, "left_neighbor_swap"),  # op 5 moves left, swaps with left neighbor
-            (5, 1, 1, "right_neighbor_swap"),  # op 1 moves right, swaps with right neighbor
+            (
+                Neighborhood.N5,
+                5,
+                0,
+                "left_neighbor_swap",
+            ),  # op 5 moves left, swaps with left neighbor
+            (
+                Neighborhood.N5,
+                1,
+                1,
+                "right_neighbor_swap",
+            ),  # op 1 moves right, swaps with right neighbor
             # N6 test cases - moves to block ends
-            (6, 6, 0, "move_to_left_end"),  # op 6 moves to left end of its block
-            (6, 1, 1, "move_to_right_end"),  # op 1 moves to right end of its block
+            (Neighborhood.N6, 6, 0, "move_to_left_end"),  # op 6 moves to left end of its block
+            (Neighborhood.N6, 1, 1, "move_to_right_end"),  # op 1 moves to right end of its block
         ],
     )
     def test_operation_selection(
         self,
-        neighborhood: int,
+        neighborhood: Neighborhood,
         op_idx: int,
         direction: int,
         expected_behavior: str,
@@ -928,6 +941,10 @@ class TestSelectOperationsToSwitch(TestFixtures):
 
         # Create action and get result
         action = jnp.array([op_idx, direction], dtype=jnp.int32)
+        # Ensure neighborhood is of correct type (mypy issue with parametrize)
+        assert isinstance(
+            neighborhood, Neighborhood
+        ), f"Expected Neighborhood, got {type(neighborhood)}"
         result = select_operations_to_switch(critical_block_info, action, neighborhood=neighborhood)
 
         # Common assertions for all cases
@@ -998,9 +1015,11 @@ class TestSelectOperationsToSwitch(TestFixtures):
             chex.assert_max_traces(select_operations_to_switch, n=1), static_argnums=(2,)
         )
 
-        result_jit_1 = jit_fn(critical_block_info, action, 5)
-        result_jit_2 = jit_fn(critical_block_info, action, 5)
-        result_normal = select_operations_to_switch(critical_block_info, action, neighborhood=5)
+        result_jit_1 = jit_fn(critical_block_info, action, Neighborhood.N5)
+        result_jit_2 = jit_fn(critical_block_info, action, Neighborhood.N5)
+        result_normal = select_operations_to_switch(
+            critical_block_info, action, neighborhood=Neighborhood.N5
+        )
 
         assert jnp.array_equal(result_jit_1, result_normal)
         assert jnp.array_equal(result_jit_2, result_normal)
