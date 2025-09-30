@@ -18,6 +18,8 @@ import jax.random
 import pytest
 from chex import PRNGKey
 
+from jumanji.environments.packing.job_shop.conftest import DummyScenarioGenerator
+from jumanji.environments.packing.job_shop.improvement.env import JobShop
 from jumanji.environments.packing.job_shop.improvement.generator import ScheduleGenerator
 from jumanji.environments.packing.job_shop.improvement.types import (
     ImprovementState,
@@ -202,3 +204,10 @@ class DummyScheduleGenerator(ScheduleGenerator):
 @pytest.fixture
 def dummy_schedule_generator() -> DummyScheduleGenerator:
     return DummyScheduleGenerator()
+
+
+@pytest.fixture
+def job_shop_env() -> JobShop:
+    scenario_generator = DummyScenarioGenerator()
+    schedule_generator = DummyScheduleGenerator()
+    return JobShop(scenario_generator=scenario_generator, schedule_generator=schedule_generator)
