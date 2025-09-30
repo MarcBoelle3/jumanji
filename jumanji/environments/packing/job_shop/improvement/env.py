@@ -1,0 +1,590 @@
+# Copyright 2022 InstaDeep Ltd. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from functools import cached_property
+from typing import Literal, Optional, Sequence, Tuple
+
+import chex
+import jax
+import jax.numpy as jnp
+import matplotlib
+
+from jumanji import specs
+from jumanji.env import Environment
+from jumanji.environments.packing.job_shop.improvement.compute_makespan import (
+    compute_est_lst_makespan,
+)
+from jumanji.environments.packing.job_shop.improvement.generator import (
+    ScheduleGenerator,
+)
+from jumanji.environments.packing.job_shop.improvement.get_actions import (
+    CBFields,
+    get_action_mask_n5,
+    get_action_mask_n6,
+    get_critical_operations_features,
+    select_operations_to_switch,
+)
+from jumanji.environments.packing.job_shop.improvement.restart_from_best import (
+    increase_step_since_best,
+    restart_needed,
+    update_best_solution_so_far,
+)
+from jumanji.environments.packing.job_shop.improvement.types import (
+    BestSolution,
+    ImprovementState,
+    Neighborhood,
+    Observation,
+    SchedulingMethod,
+)
+from jumanji.environments.packing.job_shop.improvement.update_sol import update_disjunctive_graph
+from jumanji.environments.packing.job_shop.scenario_generator import (
+    RandomScenarioGenerator,
+    ScenarioGenerator,
+)
+from jumanji.environments.packing.job_shop.viewer import JobShopViewer
+from jumanji.types import TimeStep, restart, termination, transition, truncation
+from jumanji.viewer import Viewer
+
+
+class JobShop(Environment[ImprovementState, specs.MultiDiscreteArray, Observation]):
+    """Job Shop Scheduling Problem (JSSP) environment for improvement heuristics.
+
+    This environment implements a JSSP where the goal is to improve an initial solution
+    through local search operations. The environment supports different initialization
+    methods and reward types.
+    """
+
+    def __init__(
+        self,
+        scenario_generator: Optional[ScenarioGenerator] = None,
+        schedule_generator: Optional[ScheduleGenerator] = None,
+        viewer: Optional[Viewer[ImprovementState]] = None,
+        time_limit: Optional[int] = None,
+        neighborhood: Optional[Neighborhood] = None,
+        scheduling_method: Optional[SchedulingMethod] = None,
+        reward_type: Optional[Literal["incumbent", "composed", "local"]] = None,
+        reward_scale: Optional[float] = None,
+        mask_last_action: Optional[bool] = None,
+        restart_from_best: Optional[bool] = None,
+        nb_steps_before_restart: Optional[int] = None,
+    ):
+        """Initialize the Job Shop Improvement environment.
+
+        Args:
+            scenario_generator: Generator object for creating problem instances.
+                Defaults to RandomScenarioGenerator.
+            schedule_generator: Generator object for creating initial schedules.
+                Defaults to ScheduleGenerator.
+            viewer: Viewer object for rendering. Defaults to JobShopViewer.
+            time_limit: Maximum number of steps per episode. Defaults to 500.
+            neighborhood: Neighborhood type (N5 or N6). Defaults to N5.
+            scheduling_method: Method for generating initial schedules.
+                Defaults to FLOW_DUE_DATE_MOST_WORK.
+            reward_type: Type of reward calculation ("incumbent", "composed", or "local").
+                Defaults to "incumbent".
+            reward_scale: Scale factor for composed reward. Defaults to 0.3.
+            mask_last_action: Whether to mask the last action to prevent immediate reversal.
+                Defaults to False.
+            restart_from_best: Whether to restart from the best solution when stuck.
+                Defaults to False.
+            nb_steps_before_restart: Number of steps without improvement before restarting.
+                Defaults to 50.
+        """
+
+        self.scenario_generator = scenario_generator or RandomScenarioGenerator(
+            max_num_jobs=20,
+            max_num_ops=10,
+            max_op_duration=6,
+        )
+        self.schedule_generator = schedule_generator or ScheduleGenerator(
+            num_jobs=20, num_machines=10, max_num_ops=10, max_num_jobs=20
+        )
+
+        # Initialize static parameters
+        self.max_num_jobs = self.scenario_generator.max_num_jobs
+        self.max_op_duration = self.scenario_generator.max_op_duration
+        self.max_num_ops = self.scenario_generator.max_num_ops
+        self.max_num_edges_mc = self.max_num_ops * self.max_num_jobs  # upper bound
+        self.max_num_edges_pc = self.max_num_jobs * (self.max_num_ops + 1)
+        self.max_num_edges = self.max_num_edges_mc + self.max_num_edges_pc
+        self.neighborhood = neighborhood or Neighborhood.N5
+        self.scheduling_method = scheduling_method or SchedulingMethod.FLOW_DUE_DATE_MOST_WORK
+        # Initialize dynamic parameters
+        self.num_jobs = self.schedule_generator.num_jobs
+        self.num_machines = self.schedule_generator.num_machines
+        self.time_limit = time_limit or 500
+
+        # Initialize reward parameters
+        self.reward_type = reward_type or "incumbent"
+        self.reward_scale = reward_scale or 0.3
+
+        # Initialize mask last action
+        self.mask_last_action = mask_last_action or False
+
+        # Initialize restart from best parameters
+        self.restart_from_best = restart_from_best or False
+        self.nb_steps_before_restart = nb_steps_before_restart or 50
+
+        super().__init__()
+
+        # Create viewer used for rendering
+        self._viewer = viewer or JobShopViewer(
+            "JobShop",
+            self.num_jobs,
+            self.num_machines,
+            self.max_num_ops,
+            self.max_op_duration,
+        )
+
+    def __repr__(self) -> str:
+        return "\n".join(
+            [
+                "JobShop environment:",
+                f" - scenario_generator: {self.scenario_generator}",
+                f" - schedule_generator: {self.schedule_generator}",
+                f" - num_jobs: {self.num_jobs}",
+                f" - num_machines: {self.num_machines}",
+                f" - max_num_ops: {self.max_num_ops}",
+                f" - max_op_duration: {self.max_op_duration}",
+            ]
+        )
+
+    @cached_property
+    def observation_spec(self) -> specs.Spec[Observation]:
+        """Specifications of the observation of the `JobShop` environment.
+
+        Returns:
+            Spec containing the specifications for all the `Observation` fields:
+            - ops_machine_ids: BoundedArray (int32) of shape (num_jobs, max_num_ops).
+            - ops_durations: BoundedArray (float32) of shape (num_jobs, max_num_ops).
+            - adj_mat_pc: BoundedArray (int32) of shape (num_jobs, num_jobs).
+            - adj_mat_mc: BoundedArray (int32) of shape (num_jobs, num_jobs).
+            - makespan: BoundedArray (int32) of shape ().
+        """
+        ops_machine_ids = specs.BoundedArray(
+            shape=(self.max_num_jobs, self.max_num_ops),
+            dtype=jnp.int32,
+            minimum=-1,
+            maximum=self.num_machines - 1,
+            name="ops_machine_ids",
+        )
+        ops_durations = specs.BoundedArray(
+            shape=(self.max_num_jobs, self.max_num_ops),
+            dtype=jnp.float32,
+            minimum=-1,
+            maximum=self.max_op_duration,
+            name="ops_durations",
+        )
+        edges_pc = specs.Array(
+            shape=(self.max_num_edges_pc, 2),
+            dtype=jnp.int32,
+            name="edges_pc",
+        )
+        edges_mc = specs.Array(
+            shape=(self.max_num_edges_mc, 2),
+            dtype=jnp.int32,
+            name="edges_mc",
+        )
+        makespan = specs.Array(
+            shape=(),
+            dtype=jnp.float32,
+            name="makespan",
+        )
+        incumbent_makespan = specs.Array(
+            shape=(),
+            dtype=jnp.float32,
+            name="incumbent_makespan",
+        )
+        action_mask = specs.Array(
+            shape=(self.max_num_ops * self.max_num_jobs, 2),
+            dtype=bool,
+            name="action_mask",
+        )
+        observation_features = specs.Array(
+            shape=(self.max_num_jobs * self.max_num_ops + 2, 5),
+            dtype=jnp.float32,
+            name="observation_features",
+        )
+        num_machines = specs.Array(
+            shape=(),
+            dtype=jnp.int32,
+            name="num_machines",
+        )
+        extra_features = specs.Array(
+            shape=(self.max_num_ops * self.max_num_jobs, 3),
+            dtype=jnp.int32,
+            name="extra_features",
+        )
+        best_solution_so_far = specs.Spec(
+            constructor=BestSolution,
+            name="BestSolution",
+            scheduled_times=specs.Array(
+                shape=(self.max_num_jobs, self.max_num_ops), dtype=jnp.float32
+            ),
+            action_mask=specs.Array(shape=(self.max_num_ops * self.max_num_jobs, 2), dtype=bool),
+            critical_block_info=specs.Array(
+                shape=(self.max_num_jobs * self.max_num_ops, 8), dtype=jnp.int32
+            ),
+            est=specs.Array(shape=(self.max_num_jobs * self.max_num_ops + 2,), dtype=jnp.float32),
+            lst=specs.Array(shape=(self.max_num_jobs * self.max_num_ops + 2,), dtype=jnp.float32),
+            adj_mat_pc=specs.Array(
+                shape=(
+                    self.max_num_jobs * self.max_num_ops + 2,
+                    self.max_num_jobs * self.max_num_ops + 2,
+                ),
+                dtype=jnp.float32,
+            ),
+            adj_mat_mc=specs.Array(
+                shape=(
+                    self.max_num_jobs * self.max_num_ops + 2,
+                    self.max_num_jobs * self.max_num_ops + 2,
+                ),
+                dtype=jnp.int32,
+            ),
+            is_on_critical_path=specs.Array(
+                shape=(self.max_num_jobs, self.max_num_ops), dtype=bool
+            ),
+            gap_left_right=specs.Array(
+                shape=(self.max_num_jobs * self.max_num_ops, 2), dtype=jnp.float32
+            ),
+        )
+        return specs.Spec(
+            constructor=Observation,
+            name="ObservationSpec",
+            ops_machine_ids=ops_machine_ids,
+            ops_durations=ops_durations,
+            edges_pc=edges_pc,
+            edges_mc=edges_mc,
+            makespan=makespan,
+            incumbent_makespan=incumbent_makespan,
+            action_mask=action_mask,
+            observation_features=observation_features,
+            num_machines=num_machines,
+            extra_features=extra_features,
+            best_solution_so_far=best_solution_so_far,
+        )
+
+    @cached_property
+    def action_spec(self) -> specs.MultiDiscreteArray:
+        """Specifications of the action in the `JobShopImprovement` environment.
+        The action gives a tuple (action_idx, left_or_right), where action_idx is the index of the
+        operation to be switched and left_or_right is a direction of the move.  For left_or_right:
+        - 0: start stays at its position and end moves before it.
+        - 1: end stays at its position and start moves after it.
+        The direction is dummy for N5 neighborhood, as it gives the same result after masking,
+        but required for N6 neighborhood as it distinguishes between the two possible moves.
+
+        Returns:
+            action_spec: a `specs.Array` spec.
+        """
+        return specs.MultiDiscreteArray(
+            num_values=jnp.array([self.max_num_ops * self.max_num_jobs, 2], dtype=jnp.int32),
+            name="action",
+        )
+
+    def reset(self, key: chex.PRNGKey) -> Tuple[ImprovementState, TimeStep[Observation]]:
+        """Resets the environment by creating a new problem instance and initialising the state
+        and timestep.
+
+        Args:
+            key: random key used to reset the environment.
+
+        Returns:
+            state: the environment state after the reset.
+            timestep: the first timestep returned by the environment after the reset.
+        """
+        # Generate a new problem instance
+        scenario = self.scenario_generator(key, self.num_jobs, self.num_machines)
+        state = self.schedule_generator(
+            scenario.key, scenario, method=self.scheduling_method, neighborhood=self.neighborhood
+        )
+
+        obs = self._observation_from_state(state)
+        timestep = restart(observation=obs)
+
+        return state, timestep
+
+    def step(
+        self, state: ImprovementState, action: chex.Array
+    ) -> Tuple[ImprovementState, TimeStep[Observation]]:
+        """Apply action and recomputes schedule.
+
+        The function:
+        1. Updates the graph topology by combining precedence constraints and machine constraints
+        2. Computes the makespan using forward and backward passes on the adjacency matrix
+        3. Calculates the reward
+        4. Updates the incumbent and current objectives
+        5) Rebuild action mask and auxiliary features; optionally mask last action
+        6) Build new state; optionally update best-so-far and handle restarts
+        7) Build next observation and timestep
+
+        Args:
+            state: current environment state.
+            action: tuple (action_idx, direction).
+
+        Returns:
+            new_state: updated environment state.
+            timestep: timestep with observation and reward.
+        """
+
+        # 1) Decode action → (start_op, end_op, direction)
+        action_ops_pair = select_operations_to_switch(
+            state.critical_block_info, action, neighborhood=self.neighborhood
+        )
+
+        # Update machine constraints according to the chosen move
+        new_adj_mat_mc = update_disjunctive_graph(
+            state.adj_mat_mc, state.ops_durations, action_ops_pair
+        )
+
+        # 2) Combine constraints and recompute schedule metrics
+        combined_adj_mat = jnp.maximum(state.adj_mat_pc, new_adj_mat_mc)
+        est, lst, new_makespan = compute_est_lst_makespan(
+            combined_adj_mat, state.ops_durations, self.max_num_edges
+        )
+
+        # 3) Update scheduled times from earliest start times (drop source/target)
+        new_scheduled_times = est[1:-1].reshape((self.max_num_jobs, self.max_num_ops))
+
+        # 4) Reward and bookkeeping
+        if self.reward_type == "incumbent":
+            reward = jnp.maximum(state.incumbent_makespan - new_makespan, 0)
+        elif self.reward_type == "composed":
+            reward = jnp.maximum(state.incumbent_makespan - new_makespan, 0) + self.reward_scale * (
+                state.makespan - new_makespan
+            )
+        elif self.reward_type == "local":
+            reward = state.makespan - new_makespan
+
+        incumbent_makespan = jnp.minimum(state.incumbent_makespan, new_makespan)
+        step_minimum = jnp.where(
+            new_makespan < state.incumbent_makespan, state.step_count + 1, state.step_minimum
+        )
+
+        # 5) New feasible actions and auxiliary features
+        action_mask, critical_block_info, gap_left_right = self._create_action_mask(
+            est, lst, new_adj_mat_mc, state.ops_durations, state.num_ops_per_job
+        )
+        is_on_critical_path = (
+            critical_block_info[:, CBFields.IS_ON_CRITICAL_PATH]
+            .astype(jnp.bool_)
+            .reshape((self.max_num_jobs, self.max_num_ops))
+        )
+
+        # Optionally prevent immediate reversal of the last action
+        if self.mask_last_action:
+            action_mask = self._mask_last_action(action_mask, action, action_ops_pair)
+
+        has_valid_actions = jnp.any(action_mask)
+
+        # 6) Build next state and optional restart-from-best update
+        improved = new_makespan <= state.incumbent_makespan
+        new_state = ImprovementState(
+            ops_machine_ids=state.ops_machine_ids,
+            ops_durations=state.ops_durations,
+            num_ops_per_job=state.num_ops_per_job,
+            step_count=state.step_count + 1,
+            scheduled_times=new_scheduled_times,
+            adj_mat_pc=state.adj_mat_pc,
+            adj_mat_mc=new_adj_mat_mc,
+            makespan=new_makespan,
+            incumbent_makespan=incumbent_makespan,
+            step_minimum=step_minimum,
+            is_on_critical_path=is_on_critical_path,
+            action_mask=action_mask,
+            critical_block_info=critical_block_info,
+            gap_left_right=gap_left_right,
+            est=est,
+            lst=lst,
+            key=state.key,
+            best_solution_so_far=state.best_solution_so_far,
+            step_since_best=state.step_since_best,
+        )
+
+        # Update best solution so far (no-op if not improved)
+        new_state = jax.lax.cond(
+            improved, lambda x: update_best_solution_so_far(x), lambda x: x, new_state
+        )
+
+        # Optionally restart from best if no improvement for a while
+        if self.restart_from_best:
+            new_state = jax.lax.cond(
+                ~improved & (new_state.step_since_best + 1 >= self.nb_steps_before_restart),
+                restart_needed,
+                increase_step_since_best,
+                new_state,
+            )
+
+        # 7) Build observation and timestep
+        next_obs = self._observation_from_state(new_state)
+
+        done = state.step_count >= self.time_limit
+
+        branches = [truncation, termination, transition]
+        index = jnp.select([done, ~has_valid_actions], [0, 1], default=2)
+        timestep = jax.lax.switch(index, branches, reward, next_obs)
+
+        return new_state, timestep
+
+    def animate(
+        self,
+        states: Sequence[ImprovementState],
+        interval: int = 200,
+        save_path: Optional[str] = None,
+    ) -> matplotlib.animation.FuncAnimation:
+        """Creates an animated gif of the Jobshop environment based on the sequence of states.
+
+        Args:
+            states: sequence of environment states corresponding to consecutive timesteps.
+            interval: delay between frames in milliseconds, default to 200.
+            save_path: the path where the animation file should be saved. If it is None, the plot
+                will not be saved.
+
+        Returns:
+            animation.FuncAnimation: the animation object that was created.
+        """
+        return self._viewer.animate(states, interval, save_path)
+
+    def _create_action_mask(
+        self,
+        est: chex.Array,
+        lst: chex.Array,
+        adj_mat_mc: chex.Array,
+        ops_durations: chex.Array,
+        num_ops_per_job: chex.Array,
+    ) -> Tuple[chex.Array, chex.Array, chex.Array]:
+        """Create the action mask corresponding to N5 neighborhood."""
+
+        critical_block_info, gap_left_right = get_critical_operations_features(
+            est,
+            lst,
+            adj_mat_mc,
+            ops_durations,
+            self.max_num_jobs,
+            self.max_num_ops,
+            self.max_num_edges,
+        )
+
+        action_mask = jax.lax.cond(
+            self.neighborhood == Neighborhood.N5,
+            lambda x: get_action_mask_n5(x, self.max_num_ops),
+            lambda x: get_action_mask_n6(x, self.max_num_ops, est, num_ops_per_job),
+            critical_block_info,
+        )
+        return action_mask, critical_block_info, gap_left_right
+
+    def _mask_last_action(
+        self, action_mask: chex.Array, last_action: chex.Array, action_ops_pair: chex.Array
+    ) -> chex.Array:
+        """Mask the last action to prevent immediate reversal.
+
+        Args:
+            action_mask: Current action mask of shape (max_num_ops * max_num_jobs, 2)
+            last_action: Last action taken, array of shape (2,) with [action_idx, direction]
+            action_ops_pair: Array of shape (3,) with [start_op_idx, end_op_idx, _]
+        Returns:
+            Updated action mask with last action masked out
+        """
+        action_idx, direction = last_action[0], last_action[1]
+        mask_update = jnp.ones_like(action_mask, dtype=bool)
+
+        if self.neighborhood == Neighborhood.N6:
+            # Prevent immediate reversal:
+            opposite_direction = 1 - direction
+            mask_update = mask_update.at[action_idx, opposite_direction].set(False)
+
+        elif self.neighborhood == Neighborhood.N5:
+            action_start, action_end, _ = action_ops_pair  # action_start always before action_end
+            idx_to_update = (1 - direction) * action_start + direction * action_end
+            # idx_to_update : action_start if direction is 0(left), action_end if direction is
+            # 1(right)
+            mask_update = mask_update.at[idx_to_update, direction].set(False)
+
+        # Apply the mask
+        return action_mask & mask_update
+
+    def _observation_from_state(self, state: ImprovementState) -> Observation:
+        """Converts a job shop environment state to an observation.
+
+        Args:
+            state: `State` object containing the dynamics of the environment.
+
+        Returns:
+            observation: `Observation` object containing the observation of the environment.
+        """
+
+        adj_mat_mc = state.adj_mat_mc
+        adj_mat_pc = state.adj_mat_pc
+
+        senders_mc, receivers_mc = jnp.nonzero(
+            adj_mat_mc > 0, size=self.max_num_edges_mc, fill_value=-1
+        )
+        senders_pc, receivers_pc = jnp.nonzero(
+            adj_mat_pc > 0, size=self.max_num_edges_pc, fill_value=-1
+        )
+        edges_mc = jnp.stack([senders_mc, receivers_mc], axis=-1)  # shape (num_edges, 2)
+        edges_pc = jnp.stack([senders_pc, receivers_pc], axis=-1)  # shape (num_edges, 2)
+
+        # Add observation features for each operation:
+
+        empty_space_left = state.gap_left_right[:, 0]
+        empty_space_right = state.gap_left_right[:, 1]
+        empty_space_left_plus_source_target = jnp.concatenate(
+            [jnp.array([0.0]), empty_space_left, jnp.array([0.0])]
+        )
+        empty_space_right_plus_source_target = jnp.concatenate(
+            [jnp.array([0.0]), empty_space_right, jnp.array([0.0])]
+        )
+        observation_features = jnp.stack(
+            [
+                jnp.pad(
+                    state.ops_durations.reshape(-1), (1, 1), mode="constant", constant_values=0
+                ),
+                state.est,
+                state.lst,
+                empty_space_left_plus_source_target,
+                empty_space_right_plus_source_target,
+            ],
+            axis=-1,
+        )  # shape (max_num_ops*max_num_jobs + 2, 5)
+
+        # Set observation features to [-1, 0, 0, 0, 0] for invalid operations
+        observation_features = jnp.where(
+            observation_features[:, 0].reshape(-1, 1) == -1,
+            jnp.array([-1, 0, 0, 0, 0]),
+            observation_features,
+        )
+
+        extra_features = jnp.stack(
+            [
+                state.critical_block_info[:, CBFields.BLOCK_ID],
+                state.critical_block_info[:, CBFields.IS_LEFT],
+                state.critical_block_info[:, CBFields.IS_RIGHT],
+            ],
+            axis=-1,
+        )
+
+        return Observation(
+            ops_machine_ids=state.ops_machine_ids,
+            ops_durations=state.ops_durations,
+            edges_pc=edges_pc,
+            edges_mc=edges_mc,
+            makespan=state.makespan,
+            incumbent_makespan=state.incumbent_makespan,
+            action_mask=state.action_mask,
+            observation_features=observation_features,
+            num_machines=self.num_machines,
+            extra_features=extra_features,
+            best_solution_so_far=state.best_solution_so_far,
+        )
